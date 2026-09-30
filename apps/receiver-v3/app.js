@@ -11,6 +11,7 @@ import { FountainReassembler } from '../../packages/fountain/src/index.js';
 import { ChannelCalibrator } from './channel-calibration.js';
 import { optimizeLink } from './link-optimizer.js';
 import { calibrateObservationConfidences, deriveDecoderTuning } from './decoder-tuning.js';
+import { decodePayload } from '../../packages/payload-codec/src/index.js';
 import {
   computeBusyLoopDelayMs,
   computeTemporalWindowMs,
@@ -135,6 +136,9 @@ function createMetrics() {
     lowConfidenceCellRate: 0,
     colorCalibrationSeparation: 0,
     shapeCalibrationSeparation: 0,
+    payloadCodec: '—',
+    payloadIntegrity: '—',
+    payloadOriginalBytes: 0,
     lastError: '',
   };
 }
@@ -209,6 +213,8 @@ function renderMetrics() {
     ['Decode latency', metrics.decoderLatencyMs ? `${metrics.decoderLatencyMs.toFixed(0)} ms` : '—'],
     ['Link quality', `${(metrics.linkQuality * 100).toFixed(1)}%`],
     ['Transport', metrics.transportMode],
+    ['Payload codec', metrics.payloadCodec],
+    ['Payload integrity', metrics.payloadIntegrity],
     ['Fountain droplets', metrics.fountainDroplets || '—'],
     ['Recovered source blocks', metrics.fountainSourceBlocks ? `${metrics.fountainRecoveredBlocks}/${metrics.fountainSourceBlocks}` : '—'],
     ['Fountain progress', metrics.fountainSourceBlocks ? `${(metrics.fountainProgress * 100).toFixed(1)}%` : '—'],
@@ -637,6 +643,32 @@ function packetKey(packet) {
   return `${packet.sessionId}:${packet.frameType}:${packet.sequence}`;
 }
 
+async function finalizeRecoveredPayload(data, incomingMode, status) {
+  setPill(transferState, 'Transfer recovered · verifying payload…', 'working');
+  try {
+    const payload = await decodePayload(data);
+    metrics.payloadCodec = payload.codec;
+    metrics.payloadIntegrity = payload.verified === true ? 'SHA-256 verified' : 'transport CRC32';
+    metrics.payloadOriginalBytes = payload.originalBytes;
+    output.textContent = payload.text;
+    setPill(
+      transferState,
+      `Complete · ${payload.originalBytes} original bytes · ${incomingMode} · ${metrics.payloadIntegrity}`,
+      'good',
+    );
+    log(
+      `V3 ${incomingMode} transfer ${status.sessionId} complete: ${data.length} transport bytes → ${payload.originalBytes} original bytes; ${metrics.payloadIntegrity}.`,
+    );
+  } catch (error) {
+    metrics.payloadIntegrity = 'verification failed';
+    metrics.lastError = error.message;
+    output.textContent = 'Recovered transport bytes, but payload verification failed.';
+    setPill(transferState, 'Payload verification failed', 'bad');
+    log(`Payload verification failed: ${error.message}`);
+  }
+  renderMetrics();
+}
+
 function acceptProtocolPacket(packetBytes, opticalResult) {
   let decoded;
   try {
@@ -693,10 +725,7 @@ function acceptProtocolPacket(packetBytes, opticalResult) {
       lastCompletedSession = status.sessionId;
       metrics.completedAt = performance.now();
       const data = incomingMode === 'fountain' ? fountainReceiver.getData() : receiver.getData();
-      const text = incomingMode === 'fountain' ? fountainReceiver.getText() : receiver.getText();
-      output.textContent = text;
-      setPill(transferState, `Complete · ${data.length} bytes · ${incomingMode}`, 'good');
-      log(`V3 ${incomingMode} transfer ${status.sessionId} complete: ${data.length} bytes.`);
+      void finalizeRecoveredPayload(data, incomingMode, status);
     }
   } else if (incomingMode === 'fountain') {
     const expected = status.sourceBlockCount ?? '?';

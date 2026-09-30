@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Optical Receiver V3</title>
+  <style>
+    :root { font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #e9eef7; background: #0b0f16; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: #0b0f16; }
+    main { width: min(1180px,100%); margin: 0 auto; padding: 16px; }
+    h1 { margin: 0 0 6px; font-size: clamp(26px,5vw,40px); }
+    h2 { margin: 6px 0 14px; }
+    .sub,.hint { color:#9aa8bb; line-height:1.55; }
+    .toolbar,.status-row,.camera-controls { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+    button,select,label.toggle { border:1px solid #2d3a4d; background:#172131; color:#f2f6fb; border-radius:10px; padding:10px 14px; font:inherit; }
+    select { min-width:min(330px,100%); }
+    button { cursor:pointer; }
+    button:disabled,select:disabled { opacity:.45; cursor:not-allowed; }
+    .panel { margin-top:14px; border:1px solid #263246; background:#111923; border-radius:14px; padding:14px; }
+    .camera-wrap { overflow:hidden; border-radius:12px; background:#05070a; }
+    #camera,#highSourceCanvas,#coarseRectified,#coarseRoi { display:none; }
+    #sourceCanvas { width:100%; height:auto; display:block; background:#05070a; }
+    .pill { padding:7px 10px; border-radius:999px; background:#1d2735; color:#c8d3e2; font-size:13px; border:1px solid #334157; }
+    .pill[data-kind="good"] { background:#103322; border-color:#1d6f49; color:#b9f5d8; }
+    .pill[data-kind="bad"] { background:#3a171a; border-color:#7b2a31; color:#ffc5ca; }
+    .pill[data-kind="working"] { background:#2d2810; border-color:#665b20; color:#fff0a6; }
+    .metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(145px,1fr)); gap:8px; margin-top:12px; }
+    .metric { padding:10px; border-radius:10px; background:#0d141d; border:1px solid #202c3c; }
+    .metric span { display:block; color:#8897aa; font-size:12px; }
+    .metric strong { display:block; margin-top:4px; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; word-break:break-word; }
+    #output { white-space:pre-wrap; word-break:break-word; min-height:90px; padding:12px; border-radius:10px; background:#080d13; border:1px solid #202c3c; }
+    #cameraError { margin-top:12px; padding:12px; border-radius:10px; border:1px solid #7b2a31; background:#32171a; color:#ffd7da; display:grid; gap:5px; }
+    #cameraError[hidden],#debugPanel[hidden] { display:none; }
+    #v3Roi { width:100%; max-width:768px; height:auto; image-rendering:auto; border:1px solid #2b3749; background:#000; }
+    #log { max-height:220px; overflow:auto; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:12px; color:#9fb0c5; }
+    a { color:#8fc2ff; }
+    .important { color:#ffd84a; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Optical Receiver V3.2D Calibrated</h1>
+  <p class="sub">Temporal fusion · physical-channel learning · RS(15,11) · fountain recovery · adaptive 32×32 / 48×48 / 64×64</p>
+
+  <div class="toolbar">
+    <button id="startCamera">Start Camera</button>
+    <button id="stopCamera" disabled>Stop Camera</button>
+    <button id="resetTransfer">Reset Transfer</button>
+    <button id="saveDebug">Save Debug Snapshot</button>
+    <label class="toggle"><input id="toggleDebug" type="checkbox"> Show high-res ROI</label>
+    <a href="../sender-web/">Open Sender</a>
+    <a href="?mode=legacy">V3 single-frame fallback</a>
+    <a href="../receiver-web/">Legacy V1/V2 Receiver</a>
+  </div>
+
+  <section class="panel">
+    <div class="camera-controls">
+      <label for="cameraSelect"><strong>Camera:</strong></label>
+      <select id="cameraSelect" disabled><option value="">Camera permission required</option></select>
+      <button id="refreshCameras">Refresh Cameras</button>
+    </div>
+    <div class="status-row" style="margin-top:12px">
+      <span id="cameraState" class="pill">Camera idle</span>
+      <span id="trackingState" class="pill">No frame</span>
+      <span id="decodeState" class="pill">No V3 frame</span>
+      <span id="transferState" class="pill">Waiting</span>
+    </div>
+    <div id="cameraError" hidden></div>
+    <p class="hint"><strong class="important">V3.2D calibration test:</strong> keep the sender on one profile for the first 10–20 usable observations so the receiver can learn the physical channel. Watch <strong>Calibration</strong>, <strong>Learned quality gate</strong>, <strong>Suggested sender dwell</strong>, and <strong>Suggested fountain extra</strong>. Because the link is one-way, these are safe recommendations rather than remote sender commands. Then  use <strong>Resilient Fountain</strong> on the sender. Missing complete optical frames can now be recovered from redundant droplets. <strong>Temporal test:</strong> default mode now fuses compatible camera observations before RS. Use <code>?mode=legacy</code> for an A/B comparison. Start with choose <strong>V3 Robust · 32×32</strong> on the sender, use <strong>1 fps</strong> and Fullscreen. The receiver detects the density automatically. At the same distance that gave ~8 px/cell on 64×64, 32×32 should give roughly <strong>16 px/cell</strong>. Only move to 48×48 after Robust is decoding reliably.</p>
+  </section>
+
+  <section class="panel">
+    <div class="camera-wrap">
+      <video id="camera" playsinline muted></video>
+      <canvas id="sourceCanvas"></canvas>
+      <canvas id="highSourceCanvas"></canvas>
+      <canvas id="coarseRectified" width="304" height="304"></canvas>
+      <canvas id="coarseRoi" width="256" height="256"></canvas>
+    </div>
+    <div id="metrics" class="metrics"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Recovered data</h2>
+    <div id="output">Waiting for a complete V3 transfer…</div>
+  </section>
+
+  <section id="debugPanel" class="panel" hidden>
+    <h2>High-resolution logical ROI · 768×768</h2>
+    <canvas id="v3Roi" width="768" height="768"></canvas>
+  </section>
+
+  <section class="panel">
+    <h2>Receiver log</h2>
+    <div id="log"></div>
+  </section>
+</main>
+<script type="module" src="./app.js"></script>
+</body>
+</html>

@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Optical Screen-to-Camera Sender</title>
+  <style>
+    :root { font-family: Inter, system-ui, sans-serif; color: #172033; background: #f4f6f8; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 24px; }
+    main { max-width: 1100px; margin: 0 auto; }
+    h1 { margin-bottom: 6px; }
+    .sub { color: #5b6474; margin-top: 0; }
+    .panel { background: white; border: 1px solid #dfe4ea; border-radius: 14px; padding: 18px; margin: 16px 0; }
+    textarea { width: 100%; min-height: 100px; padding: 12px; font: inherit; }
+    button, select { padding: 10px 14px; margin: 8px 6px 0 0; cursor: pointer; font: inherit; }
+    #frameHost { display: grid; place-items: center; overflow: auto; background: #05070a; min-height: 390px; padding: 24px; border-radius: 10px; }
+    #frameHost svg { width: min(90vw, 900px); height: auto; max-height: 88vh; }
+    #frameHost:fullscreen { width: 100vw; height: 100vh; padding: 12px; background: #000; }
+    #frameHost:fullscreen svg { width: min(96vw, 96vh); max-width: none; max-height: 96vh; }
+    .stats { display: flex; flex-wrap: wrap; gap: 10px 22px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 14px; margin-top: 12px; }
+    .tag { padding: 5px 8px; border-radius: 6px; background: #edf2f7; }
+    .hint { color: #5b6474; line-height: 1.5; }
+    .mode-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+    a { color: #1769aa; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Optical Sender</h1>
+  <p class="sub">V3 calibrated adaptive optical modem + resilient fountain transport + legacy fallback</p>
+
+  <section class="panel">
+    <label for="message"><strong>Data to transmit</strong></label>
+    <textarea id="message">V3 ADAPTIVE OPTICAL TEST</textarea>
+
+    <div class="mode-row">
+      <label for="profile"><strong>Optical mode:</strong></label>
+      <select id="profile">
+        <option value="v3r" selected>V3 Robust · 32×32 · S4×C4 · RS(15,11) · 256-byte payload</option>
+        <option value="v3b">V3 Balanced · 48×48 · S4×C4 · RS(15,11) · 640-byte payload</option>
+        <option value="v3d">V3 Dense · 64×64 · S4×C4 · RS(15,11) · 1024-byte payload</option>
+        <option value="v1">V1 Reliable · C16 × R3 · 13-byte payload</option>
+        <option value="v21">V2.1 Robust · 8 shapes × 16 colours × R3 · 34-byte payload</option>
+        <option value="v22">V2.2 Experimental · 8 shapes × 8 colours × 4 backgrounds × R3 · 42-byte payload</option>
+        <option value="v2">V2 Fast Test · 8 shapes × 32 colours × R3 · 37-byte payload</option>
+      </select>
+    </div>
+
+    <div class="mode-row">
+      <label for="transport"><strong>Transport:</strong></label>
+      <select id="transport">
+        <option value="fountain" selected>Resilient Fountain (V3 recommended)</option>
+        <option value="classic">Classic ordered DATA/END</option>
+      </select>
+    </div>
+
+    <div class="mode-row">
+      <label for="redundancy"><strong>Fountain redundancy:</strong></label>
+      <select id="redundancy">
+        <option value="1" selected>100% extra · baseline</option>
+        <option value="0.55">55% extra · strong-link recommendation</option>
+        <option value="0.75">75% extra · stable-link recommendation</option>
+        <option value="1.5">150% extra · weak-link recovery</option>
+      </select>
+    </div>
+
+    <div>
+      <button id="generate">Generate Frames</button>
+      <button id="previous">Previous</button>
+      <button id="next">Next</button>
+      <button id="play">Play</button>
+      <select id="rate" aria-label="Frame rate">
+        <option value="auto" selected>Auto Reliable dwell</option>
+        <option value="2000">0.5 fps</option>
+        <option value="1000">1 fps</option>
+        <option value="500">2 fps</option>
+      </select>
+      <button id="fullscreen">Fullscreen Frame</button>
+      <a href="../receiver-v3/">Open V3 Receiver</a>
+      &nbsp;·&nbsp;
+      <a href="../receiver-web/">Open Legacy Receiver</a>
+    </div>
+    <div id="stats" class="stats" aria-live="polite"></div>
+    <p class="hint"><strong>V3.2D strategy:</strong> use the receiver's calibrated recommendation to choose the closest sender dwell/profile/redundancy setting. Since this link is one-way, the sender does not silently change itself. <strong>V3.2C transport:</strong> keep <strong>Resilient Fountain</strong> selected so whole missed optical frames can be reconstructed from redundant droplets. <strong>Classic</strong> remains available for A/B testing. <strong>V3 adaptive strategy:</strong> start with <strong>32×32 Robust</strong> and <strong>Auto Reliable dwell</strong>. It uses the same 768×768 optical ROI as the dense mode but doubles the camera pixels per symbol compared with 64×64. When the receiver shows strong confidence and reliable packets, step to 48×48 and only then 64×64.</p>
+  </section>
+
+  <section class="panel">
+    <div id="frameHost"></div>
+  </section>
+</main>
+<script type="module" src="./app.js"></script>
+</body>
+</html>

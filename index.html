@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Optical Screen-to-Camera Link</title>
+  <style>
+    :root { font-family: Inter, system-ui, sans-serif; color: #e9eef7; background: #0b0f16; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+    main { width: min(980px,100%); }
+    h1 { font-size: clamp(34px,7vw,64px); margin: 0 0 10px; }
+    .lead { color: #9fb0c5; font-size: 18px; line-height: 1.6; max-width: 820px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(260px,1fr)); gap: 16px; margin-top: 30px; }
+    .card { padding: 22px; border: 1px solid #29364a; border-radius: 16px; background: #111923; }
+    .card h2 { margin-top: 0; }
+    .card p { color: #9fb0c5; line-height: 1.5; }
+    a.button { display: inline-block; padding: 11px 15px; border-radius: 10px; background: #1d6fd6; color: #fff; text-decoration: none; font-weight: 700; margin-right:8px; }
+    a.secondary { background:#26364b; }
+    code { color: #b7e4ff; }
+    .note { margin-top: 26px; color: #7f8da1; line-height:1.6; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Optical Link V3</h1>
+  <p class="lead">Experimental screen-to-camera optical modem. V3 moves away from low-density multi-state cells and uses a 64×64 high-density grid, simple 4-shape × 4-colour symbols, timing tracks, native-resolution camera decoding, local locator tracking, and Reed–Solomon error correction.</p>
+
+  <div class="grid">
+    <section class="card">
+      <h2>1. V3 Sender</h2>
+      <p>Generate the high-density 64×64 optical stream. The first V3 profile uses ~1 KB DATA chunks at 1 fps while the physical link is validated.</p>
+      <a class="button" href="./apps/sender-web/">Open Sender</a>
+    </section>
+
+    <section class="card">
+      <h2>2. V3 Receiver</h2>
+      <p>Low-resolution locator tracking plus a separate native-resolution 768×768 data warp. Timing phase and RS correction are measured live.</p>
+      <a class="button" href="./apps/receiver-v3/">Open V3 Receiver</a>
+    </section>
+
+    <section class="card">
+      <h2>Legacy Lab</h2>
+      <p>Keep the V1/V2 receiver available for comparison with the earlier colour, shape and background experiments.</p>
+      <a class="button secondary" href="./apps/receiver-web/">Legacy Receiver</a>
+    </section>
+  </div>
+
+  <p class="note">V3 baseline: <code>V3-G64-S4-C4-RS15-11</code> · 768×768 logical ROI · 64×64 cells · 4 bits/cell · 3,810 encoded data cells · RS(15,11) correcting up to 2 wrong optical symbols per codeword · 1,024-byte recommended DATA payload.</p>
+</main>
+</body>
+</html>

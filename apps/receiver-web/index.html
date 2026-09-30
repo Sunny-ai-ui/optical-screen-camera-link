@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Optical Screen-to-Camera Receiver V2.2</title>
+  <style>
+    :root { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #e9eef7; background: #0b0f16; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: #0b0f16; }
+    main { width: min(1180px, 100%); margin: 0 auto; padding: 18px; }
+    h1 { margin: 0 0 6px; font-size: clamp(24px, 5vw, 38px); }
+    .sub { color: #9aa8bb; margin: 0 0 18px; }
+    .toolbar, .status-row, .camera-controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    button, label.toggle, select { border: 1px solid #2d3a4d; background: #172131; color: #f2f6fb; border-radius: 10px; padding: 10px 14px; font: inherit; }
+    select { min-width: min(320px, 100%); }
+    button { cursor: pointer; }
+    button:disabled, select:disabled { opacity: .45; cursor: not-allowed; }
+    label.toggle { display: inline-flex; gap: 8px; align-items: center; }
+    .panel { margin-top: 14px; border: 1px solid #263246; background: #111923; border-radius: 14px; padding: 14px; }
+    .camera-wrap { position: relative; overflow: hidden; border-radius: 12px; background: #05070a; }
+    #camera { display: none; }
+    #sourceCanvas { width: 100%; height: auto; display: block; background: #05070a; }
+    .pill { padding: 7px 10px; border-radius: 999px; background: #1d2735; color: #c8d3e2; font-size: 13px; border: 1px solid #334157; }
+    .pill[data-kind="good"] { background: #103322; border-color: #1d6f49; color: #b9f5d8; }
+    .pill[data-kind="bad"] { background: #3a171a; border-color: #7b2a31; color: #ffc5ca; }
+    .pill[data-kind="working"] { background: #2d2810; border-color: #665b20; color: #fff0a6; }
+    .metrics { display: grid; grid-template-columns: repeat(auto-fit,minmax(145px,1fr)); gap: 8px; margin-top: 12px; }
+    .metric { padding: 10px; border-radius: 10px; background: #0d141d; border: 1px solid #202c3c; }
+    .metric span { display: block; color: #8897aa; font-size: 12px; }
+    .metric strong { display: block; margin-top: 4px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; word-break: break-word; }
+    #output { white-space: pre-wrap; word-break: break-word; min-height: 80px; padding: 12px; border-radius: 10px; background: #080d13; border: 1px solid #202c3c; color: #eaf3ff; }
+    #cameraError { margin-top: 12px; padding: 12px; border-radius: 10px; border: 1px solid #7b2a31; background: #32171a; color: #ffd7da; display: grid; gap: 5px; }
+    #cameraError[hidden] { display: none; }
+    #cameraError strong { color: #ffffff; }
+    #cameraError span { line-height: 1.45; }
+    #cameraError code { color: #ffb3ba; overflow-wrap: anywhere; font-size: 12px; }
+    #debugPanel[hidden] { display: none; }
+    .debug-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap: 12px; }
+    .debug-grid canvas { width: 100%; height: auto; background: #000; border: 1px solid #2b3749; }
+    #log { max-height: 220px; overflow: auto; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; color: #9fb0c5; }
+    .hint { color: #9aa8bb; font-size: 14px; line-height: 1.55; }
+    .important { color: #ffd84a; }
+    a { color: #8fc2ff; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Optical Receiver V2.2</h1>
+  <p class="sub">Auto V1 / V2.1 / V2.2 / V2 detection · stable 4-locator lock · shape + foreground colour + background decoding</p>
+
+  <div class="toolbar">
+    <button id="startCamera">Start Camera</button>
+    <button id="stopCamera" disabled>Stop Camera</button>
+    <button id="resetTransfer">Reset Transfer</button>
+    <label class="toggle"><input id="toggleDebug" type="checkbox"> Show debug views</label>
+    <a href="../sender-web/">Open Sender</a>
+  </div>
+
+  <section class="panel">
+    <div class="camera-controls">
+      <label for="cameraSelect"><strong>Camera:</strong></label>
+      <select id="cameraSelect" disabled><option value="">Camera permission required</option></select>
+      <button id="refreshCameras" type="button">Refresh Cameras</button>
+    </div>
+    <div class="status-row" style="margin-top:12px">
+      <span id="cameraState" class="pill">Camera idle</span>
+      <span id="lockState" class="pill">No frame</span>
+      <span id="packetState" class="pill">No packet yet</span>
+      <span id="transferState" class="pill">Waiting</span>
+    </div>
+    <div id="cameraError" hidden></div>
+    <p class="hint"><strong class="important">Recommended long-stream test:</strong> choose <strong>V2.2 · 8 shapes × 8 colours × 4 backgrounds × R3</strong> on the sender at <strong>1 fps</strong>. Each logical cell represents one complete byte. The receiver separately calibrates and votes shape, foreground colour, and neutral background level.</p>
+  </section>
+
+  <section class="panel">
+    <div class="camera-wrap">
+      <video id="camera" playsinline muted></video>
+      <canvas id="sourceCanvas"></canvas>
+    </div>
+    <div id="metrics" class="metrics"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Recovered data</h2>
+    <div id="output">Waiting for a complete transfer…</div>
+  </section>
+
+  <section id="debugPanel" class="panel" hidden>
+    <h2>Debug views</h2>
+    <div class="debug-grid">
+      <div><h3>Auto perspective result · 304×304</h3><canvas id="rectifiedCanvas" width="304" height="304"></canvas></div>
+      <div><h3>Logical 256×256 ROI</h3><canvas id="roiCanvas" width="256" height="256"></canvas></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Receiver log</h2>
+    <div id="log"></div>
+  </section>
+</main>
+<script type="module" src="./app.js"></script>
+</body>
+</html>

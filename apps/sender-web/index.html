@@ -36,14 +36,8 @@
 
     <div class="mode-row">
       <label for="profile"><strong>Optical mode:</strong></label>
-      <select id="profile">
-        <option value="v3r" selected>V3 Robust · 32×32 · S4×C4 · RS(15,11) · 256-byte payload</option>
-        <option value="v3b">V3 Balanced · 48×48 · S4×C4 · RS(15,11) · 640-byte payload</option>
-        <option value="v3d">V3 Dense · 64×64 · S4×C4 · RS(15,11) · 1024-byte payload</option>
-        <option value="v1">V1 Reliable · C16 × R3 · 13-byte payload</option>
-        <option value="v21">V2.1 Robust · 8 shapes × 16 colours × R3 · 34-byte payload</option>
-        <option value="v22">V2.2 Experimental · 8 shapes × 8 colours × 4 backgrounds × R3 · 42-byte payload</option>
-        <option value="v2">V2 Fast Test · 8 shapes × 32 colours × R3 · 37-byte payload</option>
+      <select id="profile" disabled>
+        <option value="v3r" selected>G32 Production Lock · 32×32 · S4×C4 · RS(15,11)</option>
       </select>
     </div>
 
@@ -82,7 +76,7 @@
       <a href="../receiver-web/">Open Legacy Receiver</a>
     </div>
     <div id="stats" class="stats" aria-live="polite"></div>
-    <p class="hint"><strong>V3.2D strategy:</strong> use the receiver's calibrated recommendation to choose the closest sender dwell/profile/redundancy setting. Since this link is one-way, the sender does not silently change itself. <strong>V3.2C transport:</strong> keep <strong>Resilient Fountain</strong> selected so whole missed optical frames can be reconstructed from redundant droplets. <strong>Classic</strong> remains available for A/B testing. <strong>V3 adaptive strategy:</strong> start with <strong>32×32 Robust</strong> and <strong>Auto Reliable dwell</strong>. It uses the same 768×768 optical ROI as the dense mode but doubles the camera pixels per symbol compared with 64×64. When the receiver shows strong confidence and reliable packets, step to 48×48 and only then 64×64.</p>
+    <p class="hint"><strong>v0.4.4 production baseline:</strong> the live optical path is intentionally locked to <strong>G32 / 32×32</strong> while reliability, speed and lightweight runtime are optimized. G48/G64 remain in the codebase for future experiments but cannot be selected by the production sender. Keep <strong>Resilient Fountain</strong> enabled; use Auto Reliable dwell unless you are running a controlled timing test.</p>
   </section>
 
   <section class="panel">

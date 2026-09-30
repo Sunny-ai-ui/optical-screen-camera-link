@@ -41,3 +41,26 @@ test('controller recommends upgrade only after sustained clean decoding', () => 
   assert.equal(status.recommendation, 'upgrade');
   assert.equal(status.recommendedProfileId, 'V3-G48-S4-C4-RS15-11');
 });
+
+
+test('locked production controller never recommends leaving G32', () => {
+  const controller = new AdaptiveLinkController({
+    upgradeStreak: 2,
+    lockedProfileId: 'V3-G32-S4-C4-RS15-11',
+  });
+  for (let i = 0; i < 6; i += 1) {
+    const status = controller.add({
+      profileId: 'V3-G32-S4-C4-RS15-11',
+      frameQuality: 0.99,
+      cellAgreement: 0.99,
+      averageConfidence: 0.99,
+      pixelsPerCell: 18,
+      decoded: true,
+      rsBlocks: 10,
+      correctedSymbols: 0,
+      erasuresUsed: 0,
+    });
+    assert.equal(status.recommendation, 'hold');
+    assert.equal(status.recommendedProfileId, 'V3-G32-S4-C4-RS15-11');
+  }
+});

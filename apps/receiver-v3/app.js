@@ -1,5 +1,5 @@
 import { decodePacket, FRAME_TYPES, FRAME_TYPE_NAMES, PacketError, TransferReassembler } from '../../packages/protocol/src/index.js';
-import { V3_G32_S4_C4_RS, V3_PROFILES } from '../../packages/optical-codec/src/profiles.js';
+import { V3_G32_S4_C4_RS } from '../../packages/optical-codec/src/profiles.js';
 import { describeCameraError, listVideoInputs, openCameraWithFallback } from '../receiver-web/camera.js';
 import { drawVideoFrame, drawAutoFiducialOverlay, extractLogicalRoi, rectifyFiducials } from '../receiver-web/vision.js';
 import { estimateV3CameraPixelsPerCell, rectifyV3LogicalRoi, trackOrAcquireV3Fiducials } from './vision-v3.js';
@@ -49,7 +49,7 @@ let loopTimer = null;
 let lastDetection = null;
 let detectorMisses = 0;
 let coarseMisses = 0;
-let activeProfile = null;
+let activeProfile = V3_G32_S4_C4_RS;
 let receiver = new TransferReassembler();
 let fountainReceiver = new FountainReassembler();
 let transportMode = 'waiting';
@@ -57,9 +57,9 @@ let seenPackets = new Set();
 let lastCompletedSession = null;
 let metrics = createMetrics();
 const receiverMode = new URLSearchParams(location.search).get('mode') === 'legacy' ? 'legacy' : 'temporal';
-let temporalStore = new TemporalObservationStore();
+let temporalStore = createTemporalStore(V3_G32_S4_C4_RS);
 let decoderWorker = null;
-let adaptiveLink = new AdaptiveLinkController();
+let adaptiveLink = new AdaptiveLinkController({ lockedProfileId: V3_G32_S4_C4_RS.id });
 let channelCalibrator = new ChannelCalibrator();
 let profileLock = new ProfileLockController({ switchStreak: 4 });
 let decoderBusy = false;
@@ -308,37 +308,17 @@ function resetTransfer(reason = 'manual reset') {
   renderMetrics();
 }
 
-function switchProfile(profile) {
-  if (!profile || activeProfile?.id === profile.id) return;
-  const previous = activeProfile?.id ?? 'none';
-  activeProfile = profile;
-  metrics.profileId = profile.id;
-  receiver = new TransferReassembler();
-  fountainReceiver = new FountainReassembler();
-  transportMode = 'waiting';
-  seenPackets.clear();
-  temporalStore = createTemporalStore(profile);
-  adaptiveLink.reset();
-  channelCalibrator.reset();
-  profileLock.reset();
-  lastCompletedSession = null;
-  metrics.firstAcceptedAt = null;
-  metrics.completedAt = null;
-  output.textContent = 'Waiting for a complete V3 transfer…';
-  setPill(transferState, 'Waiting');
-  log(`V3 density lock: ${previous} → ${profile.id}`);
+function switchProfile() {
+  // Production profile is deliberately fixed. Keep this helper as a guard for
+  // older call sites, but never allow a runtime density change.
+  activeProfile = V3_G32_S4_C4_RS;
+  metrics.profileId = V3_G32_S4_C4_RS.id;
 }
 
 function probeAdaptiveProfile(canvas) {
-  const profiles = activeProfile
-    ? [activeProfile, ...V3_PROFILES.filter((profile) => profile.id !== activeProfile.id)]
-    : V3_PROFILES;
-  const results = profiles.map((profile) => ({ ...detectV3Coarse(canvas, profile), profile }));
-  const current = activeProfile ? results.find((result) => result.profile.id === activeProfile.id) : null;
-  if (current?.isV3) return current;
-  const valid = results.filter((result) => result.isV3).sort((a, b) => b.score - a.score);
-  if (valid.length) return valid[0];
-  return results.sort((a, b) => b.score - a.score)[0];
+  // v0.4.4 production baseline: only G32 is eligible for live decoding.
+  // G48/G64 remain implemented in the codec for future controlled experiments.
+  return { ...detectV3Coarse(canvas, V3_G32_S4_C4_RS), profile: V3_G32_S4_C4_RS };
 }
 
 function downloadBlob(blob, filename) {
@@ -365,7 +345,13 @@ function saveDebugSnapshot() {
     transfer: currentTransportStatus(),
     temporalObservationCount: temporalStore.observations?.length ?? 0,
     channelCalibration: channelCalibrator.summary(),
-    linkOptimization: optimizeLink({ profileId: activeProfile?.id, linkStatus: adaptiveLink.status(activeProfile?.id), calibration: channelCalibrator.summary(), fountainProgress: metrics.fountainProgress }),
+    linkOptimization: optimizeLink({
+      profileId: V3_G32_S4_C4_RS.id,
+      linkStatus: adaptiveLink.status(V3_G32_S4_C4_RS.id),
+      calibration: channelCalibrator.summary(),
+      fountainProgress: metrics.fountainProgress,
+      lockedProfileId: V3_G32_S4_C4_RS.id,
+    }),
   };
   downloadBlob(new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' }), `v3-debug-${stamp}.json`);
   log('Saved V3 ROI and receiver diagnostics snapshot.');
@@ -439,15 +425,16 @@ function applyCalibrationStatus(summary, profileId = activeProfile?.id) {
   metrics.calibratedDecodeRate = summary.decodeSuccessRate;
   const linkStatus = adaptiveLink.status(profileId);
   const optimization = optimizeLink({
-    profileId,
+    profileId: V3_G32_S4_C4_RS.id,
     linkStatus,
     calibration: summary,
     fountainProgress: metrics.fountainProgress,
+    lockedProfileId: V3_G32_S4_C4_RS.id,
   });
   metrics.optimizerMode = optimization.mode;
   metrics.optimizedDwellMs = optimization.recommendedDwellMs;
   metrics.optimizedOverhead = optimization.recommendedFountainOverhead;
-  metrics.optimizedProfileId = optimization.recommendedProfileId;
+  metrics.optimizedProfileId = V3_G32_S4_C4_RS.id;
 }
 
 function processTemporalObservation(observation, profile) {

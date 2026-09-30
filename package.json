@@ -5,12 +5,13 @@
   "type": "module",
   "description": "Experimental screen-to-camera optical data-transfer system",
   "scripts": {
-    "test": "node --test",
+    "test": "node --test && npm run test:m9-syntax",
     "test:protocol": "node --test packages/protocol/tests/*.test.js",
     "test:optical": "node --test packages/optical-codec/tests/*.test.js",
     "generate:frame": "node tools/frame-generator/generate-test-frame.js",
     "benchmark:v3-temporal": "node tools/v3-temporal-benchmark/benchmark.js",
-    "benchmark:v3-fountain": "node tools/v3-fountain-benchmark/benchmark.js"
+    "benchmark:v3-fountain": "node tools/v3-fountain-benchmark/benchmark.js",
+    "test:m9-syntax": "node --check apps/sender-m9/app.js && node --check apps/receiver-m9/app.js && node --check apps/receiver-m9/m9-decoder.js && node --check apps/receiver-m9/m9-decoder-worker.js"
   },
   "engines": {
     "node": ">=20"

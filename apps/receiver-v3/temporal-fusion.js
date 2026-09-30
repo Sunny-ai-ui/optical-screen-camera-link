@@ -21,20 +21,26 @@ function weightedWinner(values, confidences, stateCount) {
     scores[value] += Math.max(0.01, confidence);
     support[value] += 1;
   }
-  let best = 0;
-  let second = 0;
-  for (let i = 1; i < scores.length; i += 1) {
-    if (scores[i] > scores[best]) {
-      second = best;
-      best = i;
-    } else if (i !== best && scores[i] > scores[second]) {
-      second = i;
-    }
-  }
+
+  const ranked = Array.from({ length: stateCount }, (_, value) => value)
+    .sort((a, b) => scores[b] - scores[a]);
+  const best = ranked[0];
+  const second = ranked[1] ?? ranked[0];
   const total = scores.reduce((sum, value) => sum + value, 0);
   const margin = scores[best] - (scores[second] || 0);
-  const confidence = total > 0 ? Math.max(0, Math.min(1, (scores[best] / total) * 0.7 + (margin / total) * 0.3)) : 0;
-  return { value: best, confidence, support: support[best], score: scores[best] };
+  const confidence = total > 0
+    ? Math.max(0, Math.min(1, (scores[best] / total) * 0.7 + (margin / total) * 0.3))
+    : 0;
+  const secondConfidence = total > 0 ? Math.max(0, Math.min(1, scores[second] / total)) : 0;
+  return {
+    value: best,
+    confidence,
+    support: support[best],
+    score: scores[best],
+    secondValue: second,
+    secondConfidence,
+    secondSupport: support[second],
+  };
 }
 
 export function observationAgreement(a, b, indices = null) {
@@ -58,6 +64,8 @@ export function fuseV3Observations(observations) {
   const shapeConfidences = new Float32Array(length);
   const colorConfidences = new Float32Array(length);
   const confidences = new Float32Array(length);
+  const alternateSymbols = new Uint8Array(length);
+  const alternateConfidences = new Float32Array(length);
   let agreementSum = 0;
 
   for (let index = 0; index < length; index += 1) {
@@ -73,6 +81,19 @@ export function fuseV3Observations(observations) {
     shapeConfidences[index] = shape.confidence;
     colorConfidences[index] = color.confidence;
     confidences[index] = Math.min(shape.confidence, color.confidence);
+
+    const shapeAlternativeConfidence = Math.min(shape.secondConfidence, color.confidence);
+    const colorAlternativeConfidence = Math.min(color.secondConfidence, shape.confidence);
+    if (shapeAlternativeConfidence >= colorAlternativeConfidence && shape.secondSupport > 0) {
+      alternateSymbols[index] = joinV3Nibble(shape.secondValue, color.value);
+      alternateConfidences[index] = shapeAlternativeConfidence;
+    } else if (color.secondSupport > 0) {
+      alternateSymbols[index] = joinV3Nibble(shape.value, color.secondValue);
+      alternateConfidences[index] = colorAlternativeConfidence;
+    } else {
+      alternateSymbols[index] = symbols[index];
+      alternateConfidences[index] = 0;
+    }
     agreementSum += (shape.support + color.support) / (observations.length * 2);
   }
 
@@ -86,6 +107,8 @@ export function fuseV3Observations(observations) {
     shapeConfidences,
     colorConfidences,
     confidences,
+    alternateSymbols,
+    alternateConfidences,
     timingSeparation: mean('timingSeparation'),
     signatureSeparation: mean('signatureSeparation'),
     phaseX: Math.round(mean('phaseX')),
@@ -96,6 +119,7 @@ export function fuseV3Observations(observations) {
     lowConfidenceCellRate: mean('lowConfidenceCellRate'),
     colorCalibrationSeparation: mean('colorCalibrationSeparation'),
     shapeCalibrationSeparation: mean('shapeCalibrationSeparation'),
+    refinedCellRate: mean('refinedCellRate'),
     calibrationConfidenceScale: mean('calibrationConfidenceScale') || 1,
     observationCount: observations.length,
     cellAgreement: agreementSum / length,

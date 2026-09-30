@@ -47,7 +47,7 @@ export function isPayloadEnvelope(bytes) {
     && MAGIC.every((value, index) => bytes[index] === value);
 }
 
-export async function encodePayload(input, { compression = 'auto' } = {}) {
+export async function encodePayload(input, { compression = 'auto', envelope = 'auto' } = {}) {
   const raw = toBytes(input);
   const digest = await sha256(raw);
   let codec = CODEC_RAW;
@@ -61,25 +61,43 @@ export async function encodePayload(input, { compression = 'auto' } = {}) {
     }
   }
 
-  const envelope = new Uint8Array(PAYLOAD_HEADER_BYTES + body.length);
-  envelope.set(MAGIC, 0);
-  envelope[4] = VERSION;
-  envelope[5] = codec;
-  const view = new DataView(envelope.buffer);
+  const envelopeBytes = PAYLOAD_HEADER_BYTES + body.length;
+  if (envelope !== 'force' && envelopeBytes >= raw.length) {
+    return {
+      bytes: raw,
+      codec: 'raw-direct',
+      enveloped: false,
+      originalBytes: raw.length,
+      encodedBodyBytes: raw.length,
+      envelopeBytes: raw.length,
+      savedBytes: 0,
+      compressionRatio: 1,
+      sha256: hex(digest),
+      integrity: 'transport-crc32',
+    };
+  }
+
+  const envelopeData = new Uint8Array(envelopeBytes);
+  envelopeData.set(MAGIC, 0);
+  envelopeData[4] = VERSION;
+  envelopeData[5] = codec;
+  const view = new DataView(envelopeData.buffer);
   view.setUint32(6, raw.length, false);
   view.setUint32(10, body.length, false);
-  envelope.set(digest, 14);
-  envelope.set(body, PAYLOAD_HEADER_BYTES);
+  envelopeData.set(digest, 14);
+  envelopeData.set(body, PAYLOAD_HEADER_BYTES);
 
   return {
-    bytes: envelope,
+    bytes: envelopeData,
     codec: codec === CODEC_GZIP ? 'gzip' : 'raw',
     originalBytes: raw.length,
     encodedBodyBytes: body.length,
-    envelopeBytes: envelope.length,
+    envelopeBytes: envelopeData.length,
     savedBytes: raw.length - body.length,
     compressionRatio: raw.length ? body.length / raw.length : 1,
     sha256: hex(digest),
+    enveloped: true,
+    integrity: 'sha256',
   };
 }
 

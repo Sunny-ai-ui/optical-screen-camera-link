@@ -31,7 +31,8 @@ jobs:
           unzip -oq /tmp/optical-v0.4.0-source.zip -d /tmp/optical-source
           cp -a /tmp/optical-source/. .
           rm -rf .bootstrap
-          rm -f .github/workflows/bootstrap-v040.yml
+          rm -f .github/workflows/pages.yml
+          rm -f .github/workflows/test.yml
 
       - name: Verify release tests
         run: npm test

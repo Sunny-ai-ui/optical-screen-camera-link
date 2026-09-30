@@ -91,8 +91,18 @@ export function fuseV3Observations(observations) {
       alternateSymbols[index] = joinV3Nibble(shape.value, color.secondValue);
       alternateConfidences[index] = colorAlternativeConfidence;
     } else {
-      alternateSymbols[index] = symbols[index];
-      alternateConfidences[index] = 0;
+      let fallbackSymbol = symbols[index];
+      let fallbackConfidence = 0;
+      for (const item of observations) {
+        const candidate = item.alternateSymbols?.[index];
+        const candidateConfidence = item.alternateConfidences?.[index] ?? 0;
+        if (candidate !== undefined && candidate !== symbols[index] && candidateConfidence > fallbackConfidence) {
+          fallbackSymbol = candidate;
+          fallbackConfidence = candidateConfidence;
+        }
+      }
+      alternateSymbols[index] = fallbackSymbol;
+      alternateConfidences[index] = fallbackConfidence;
     }
     agreementSum += (shape.support + color.support) / (observations.length * 2);
   }

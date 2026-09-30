@@ -12,7 +12,7 @@ function mapPixel(x, y, rotation, size) {
   }
 }
 
-function sampleRegion(imageData, x0, y0, x1, y1, rotation = 0) {
+export function sampleRegion(imageData, x0, y0, x1, y1, rotation = 0) {
   let r = 0; let g = 0; let b = 0; let count = 0;
   const size = imageData.width;
   const sx0 = Math.max(0, Math.floor(x0));
@@ -33,7 +33,7 @@ function sampleRegion(imageData, x0, y0, x1, y1, rotation = 0) {
   return [r / count, g / count, b / count];
 }
 
-function samplePointBilinear(imageData, x, y, rotation = 0) {
+export function samplePointBilinear(imageData, x, y, rotation = 0) {
   const size = imageData.width;
   const clampedX = Math.max(0, Math.min(size - 1.001, x));
   const clampedY = Math.max(0, Math.min(size - 1.001, y));
@@ -84,11 +84,11 @@ function trimmedMean(values, trimFraction = 0.15) {
   return mean(kept);
 }
 
-function luma(rgb) {
+export function luma(rgb) {
   return (0.2126 * rgb[0]) + (0.7152 * rgb[1]) + (0.0722 * rgb[2]);
 }
 
-function mean(values) {
+export function mean(values) {
   return values.reduce((sum, value) => sum + value, 0) / Math.max(1, values.length);
 }
 
@@ -244,7 +244,7 @@ function rgbDistance(a, b) {
   return Math.sqrt(((a[0] - b[0]) ** 2) + ((a[1] - b[1]) ** 2) + ((a[2] - b[2]) ** 2));
 }
 
-function sampleSolidCell(imageData, cellX, cellY, rotation, phase, profile) {
+export function sampleSolidCell(imageData, cellX, cellY, rotation, phase, profile) {
   const x = cellX * profile.cellSize + phase.dx;
   const y = cellY * profile.cellSize + phase.dy;
   return sampleRegionBilinear(imageData, x + 2, y + 2, x + profile.cellSize - 2, y + profile.cellSize - 2, rotation, 5);
@@ -282,7 +282,7 @@ function sampleChromaticBackground(imageData, cellX, cellY, rotation, phase, pro
   return [0, 1, 2].map((channel) => trimmedMean(selected.map((item) => item.rgb[channel]), 0.10));
 }
 
-function buildColorCalibration(imageData, rotation, phase, profile) {
+export function buildColorCalibration(imageData, rotation, phase, profile) {
   const references = Array.from({ length: profile.colorCount }, (_, colorIndex) => {
     const rgb = sampleSolidCell(
       imageData,
@@ -365,7 +365,7 @@ function extractShapeFeature(imageData, cellX, cellY, rotation, phase, backgroun
   return normalize(values);
 }
 
-function buildShapeCalibration(imageData, rotation, phase, profile) {
+export function buildShapeCalibration(imageData, rotation, phase, profile) {
   return Array.from({ length: profile.shapeCount }, (_, shapeId) => {
     const x = profile.shapeCalibrationStartX + shapeId;
     const y = profile.calibrationRow;
@@ -394,7 +394,7 @@ function classifyShape(feature, calibration) {
   };
 }
 
-function classifyDataCell(imageData, x, y, rotation, phase, profile, colorCalibration, shapeCalibration) {
+export function classifyDataCell(imageData, x, y, rotation, phase, profile, colorCalibration, shapeCalibration) {
   const localBackground = sampleChromaticBackground(imageData, x, y, rotation, phase, profile);
   const color = classifyColor(localBackground, colorCalibration);
   const shapeFeature = extractShapeFeature(imageData, x, y, rotation, phase, localBackground, profile);
@@ -421,7 +421,7 @@ function classifyDataCell(imageData, x, y, rotation, phase, profile, colorCalibr
   };
 }
 
-function minimumCalibrationSeparation(calibration, key) {
+export function minimumCalibrationSeparation(calibration, key) {
   let minimum = Infinity;
   for (let i = 0; i < calibration.length; i += 1) {
     for (let j = i + 1; j < calibration.length; j += 1) {

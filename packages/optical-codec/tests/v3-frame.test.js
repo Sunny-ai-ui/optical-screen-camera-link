@@ -8,6 +8,8 @@ import {
   encodeV3Frame,
   decodeV3Frame,
   getV3DataCellCoordinates,
+  recoverV3PacketFromSymbols,
+  recoverV3PacketFromSymbolsWithAlternates,
 } from '../src/index.js';
 import { splitV3Nibble } from '../../constellation/src/v3.js';
 
@@ -69,4 +71,44 @@ test('V3 RS interleaving corrects two damaged optical cells in one codeword', ()
   const decoded = decodeV3Frame(frame, profile);
   assert.deepEqual([...decoded.packetBytes], [...packet]);
   assert.ok(decoded.correctedSymbols >= 2);
+});
+
+
+test('V3 selective retry rescues a failed RS block using runner-up optical symbols', () => {
+  const profile = V3_G32_S4_C4_RS;
+  const packet = makeBytes(220);
+  const frame = encodeV3Frame(packet, profile);
+  const coordinates = getV3DataCellCoordinates(profile);
+  const original = Uint8Array.from(coordinates, ({ x, y }) => frame.cells[y][x].value);
+  const damaged = original.slice();
+  const alternates = damaged.slice();
+  const confidences = new Float32Array(damaged.length).fill(0.92);
+  const alternateConfidences = new Float32Array(damaged.length);
+  const block = 7;
+
+  // Three wrong symbols in one RS(15,11) codeword exceed the normal
+  // two-error budget. Runner-up symbols point back to the correct values.
+  for (const [n, position] of [1, 5, 11].entries()) {
+    const index = position * profile.rsCodewordCount + block;
+    damaged[index] = original[index] ^ (n + 1);
+    alternates[index] = original[index];
+    confidences[index] = 0.24 + n * 0.02;
+    alternateConfidences[index] = 0.68;
+  }
+
+  assert.throws(
+    () => recoverV3PacketFromSymbols(damaged, profile, confidences),
+    (error) => error.code === 'RS16_UNCORRECTABLE' && error.blockIndex === block,
+  );
+
+  const recovered = recoverV3PacketFromSymbolsWithAlternates(
+    damaged,
+    profile,
+    confidences,
+    alternates,
+    alternateConfidences,
+  );
+  assert.deepEqual([...recovered.packetBytes], [...packet]);
+  assert.ok(recovered.selectiveRetryAttempts > 0);
+  assert.deepEqual(recovered.rescuedBlocks, [block]);
 });

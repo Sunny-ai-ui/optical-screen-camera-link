@@ -4,7 +4,9 @@ import {
   M9_PACKET_CAPACITY,
   M9_SHARD_BYTES,
   M9_TILE_COUNT,
+  decodeM9HeaderBits,
   decodeM9TileSymbols,
+  encodeM9HeaderBits,
   encodeM9Superframe,
   extractM9TileSymbols,
   recoverM9Packet,
@@ -81,4 +83,14 @@ test('M9 tile CRC rejects post-RS corruption that lands outside correction budge
   symbols[1 + 8] ^= 0x02;
   symbols[1 + 16] ^= 0x04;
   assert.throws(() => decodeM9TileSymbols(symbols, 1));
+});
+
+
+test('M9 global header round-trips frame identity and packet length with CRC8', () => {
+  const bits = encodeM9HeaderBits(0xBEEF, 270);
+  assert.equal(bits.length, 40);
+  assert.deepEqual(decodeM9HeaderBits(bits), { frameId: 0xBEEF, packetLength: 270, version: 1 });
+  const damaged = bits.slice();
+  damaged[9] ^= 1;
+  assert.throws(() => decodeM9HeaderBits(damaged), /CRC8/);
 });

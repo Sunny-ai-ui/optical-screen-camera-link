@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createFountainTransfer } from '../../fountain/src/index.js';
 import {
   M9_PACKET_CAPACITY,
   M9_SHARD_BYTES,
@@ -93,4 +94,31 @@ test('M9 global header round-trips frame identity and packet length with CRC8', 
   const damaged = bits.slice();
   damaged[9] ^= 1;
   assert.throws(() => decodeM9HeaderBits(damaged), /CRC8/);
+});
+
+
+test('real fountain packets fit inside one M9 superframe', () => {
+  const payload = makeBytes(4096);
+  const transfer = createFountainTransfer(payload, {
+    sessionId: 0x1234,
+    packetPayloadBytes: 256,
+    overheadRatio: 1,
+  });
+  assert.ok(transfer.packets.length > 1);
+  for (const [index, packet] of transfer.packets.entries()) {
+    assert.ok(packet.length <= M9_PACKET_CAPACITY);
+    const frame = encodeM9Superframe(packet, { frameId: index });
+    const recovered = recoverM9Packet(decodeAll(frame), packet.length);
+    assert.deepEqual([...recovered.packetBytes], [...packet]);
+  }
+});
+
+test('M9 tiles expose self-calibration and tile marker cells', () => {
+  const frame = encodeM9Superframe(makeBytes(100), { frameId: 1 });
+  frame.tiles.forEach((tile, tileIndex) => {
+    assert.equal(tile.cells[0][2].kind, 'm9-color-calibration');
+    assert.equal(tile.cells[0][7].kind, 'm9-shape-calibration');
+    assert.equal(tile.cells[6][6].kind, 'm9-marker');
+    assert.equal(tile.cells[6][6].value, tileIndex);
+  });
 });

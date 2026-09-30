@@ -24,20 +24,20 @@ const BASE_DWELL = Object.freeze({
  * The current optical link is one-way, so these settings are recommendations,
  * not remote commands.
  */
-export function optimizeLink({ profileId, linkStatus = {}, calibration = {}, fountainProgress = 0 } = {}) {
+export function optimizeLink({ profileId, linkStatus = {}, calibration = {}, fountainProgress = 0, lockedProfileId = null } = {}) {
   const score = clamp(linkStatus.score ?? 0, 0, 1);
   const successRate = clamp(calibration.decodeSuccessRate ?? 0, 0, 1);
   const confidence = clamp(calibration.averageConfidence ?? 0, 0, 1);
   const agreementScore = score * 0.55 + successRate * 0.25 + confidence * 0.20;
   const currentIndex = profileIndex(profileId);
 
-  let recommendedProfileId = profileId || profileAt(0);
+  let recommendedProfileId = lockedProfileId || profileId || profileAt(0);
   let dwellMultiplier = 1;
   let overheadRatio = 1.0;
   let mode = 'balanced';
 
   if (agreementScore >= 0.88 && (calibration.decodeSamples ?? 0) >= 8) {
-    recommendedProfileId = profileAt(currentIndex + 1);
+    recommendedProfileId = lockedProfileId || profileAt(currentIndex + 1);
     dwellMultiplier = 0.82;
     overheadRatio = 0.55;
     mode = 'fast-stable';
@@ -50,7 +50,7 @@ export function optimizeLink({ profileId, linkStatus = {}, calibration = {}, fou
     overheadRatio = 1.0;
     mode = 'robust';
   } else {
-    recommendedProfileId = profileAt(currentIndex - 1);
+    recommendedProfileId = lockedProfileId || profileAt(currentIndex - 1);
     dwellMultiplier = 1.35;
     overheadRatio = 1.5;
     mode = 'recovery';
@@ -58,6 +58,7 @@ export function optimizeLink({ profileId, linkStatus = {}, calibration = {}, fou
 
   if (fountainProgress > 0.8 && agreementScore >= 0.72) overheadRatio = Math.min(overheadRatio, 0.75);
 
+  if (lockedProfileId) recommendedProfileId = lockedProfileId;
   const baseDwell = BASE_DWELL[recommendedProfileId] ?? 1000;
   const recommendedDwellMs = Math.round(clamp(baseDwell * dwellMultiplier, 400, 2200) / 50) * 50;
 

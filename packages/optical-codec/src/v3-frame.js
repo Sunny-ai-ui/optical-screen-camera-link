@@ -160,6 +160,159 @@ export function recoverV3PacketFromSymbols(symbols, profile = V3_G64_S4_C4_RS, c
   };
 }
 
+
+function failedBlockPhysicalIndex(profile, blockIndex, symbolPosition) {
+  return symbolPosition * profile.rsCodewordCount + blockIndex;
+}
+
+function blockWordFromSymbols(symbols, profile, blockIndex) {
+  return Uint8Array.from(
+    { length: profile.rsN },
+    (_, position) => symbols[failedBlockPhysicalIndex(profile, blockIndex, position)],
+  );
+}
+
+function blockConfidenceFromSymbols(confidences, profile, blockIndex) {
+  if (!confidences || confidences.length !== profile.encodedSymbolCapacity) return null;
+  return Float32Array.from(
+    { length: profile.rsN },
+    (_, position) => confidences[failedBlockPhysicalIndex(profile, blockIndex, position)],
+  );
+}
+
+function tryRescueFailedBlock({
+  symbols,
+  confidences,
+  alternateSymbols,
+  alternateConfidences,
+  profile,
+  blockIndex,
+  maxCandidates = 6,
+}) {
+  const baseWord = blockWordFromSymbols(symbols, profile, blockIndex);
+  const baseConfidence = blockConfidenceFromSymbols(confidences, profile, blockIndex);
+  const candidates = [];
+
+  for (let position = 0; position < profile.rsN; position += 1) {
+    const physicalIndex = failedBlockPhysicalIndex(profile, blockIndex, position);
+    const alternate = alternateSymbols?.[physicalIndex];
+    if (!Number.isInteger(alternate) || alternate === symbols[physicalIndex]) continue;
+    const confidence = Number.isFinite(confidences?.[physicalIndex]) ? confidences[physicalIndex] : 0.5;
+    const alternateConfidence = Number.isFinite(alternateConfidences?.[physicalIndex])
+      ? alternateConfidences[physicalIndex]
+      : 0;
+    candidates.push({
+      position,
+      physicalIndex,
+      alternate,
+      confidence,
+      alternateConfidence,
+      rank: (1 - confidence) + alternateConfidence * 0.45,
+    });
+  }
+
+  candidates.sort((a, b) => b.rank - a.rank);
+  const shortlist = candidates.slice(0, maxCandidates);
+  let attempts = 0;
+
+  const tryMutation = (mutations) => {
+    attempts += 1;
+    const word = baseWord.slice();
+    const confidenceWord = baseConfidence ? Float32Array.from(baseConfidence) : null;
+    for (const candidate of mutations) {
+      word[candidate.position] = candidate.alternate;
+      if (confidenceWord) confidenceWord[candidate.position] = Math.max(0.50, candidate.alternateConfidence);
+    }
+    try {
+      rs16Decode(word, { erasures: chooseErasures(confidenceWord) });
+      return mutations;
+    } catch {
+      return null;
+    }
+  };
+
+  for (const candidate of shortlist) {
+    const rescued = tryMutation([candidate]);
+    if (rescued) return { mutations: rescued, attempts };
+  }
+
+  const pairPool = shortlist.slice(0, Math.min(5, shortlist.length));
+  for (let i = 0; i < pairPool.length; i += 1) {
+    for (let j = i + 1; j < pairPool.length; j += 1) {
+      const rescued = tryMutation([pairPool[i], pairPool[j]]);
+      if (rescued) return { mutations: rescued, attempts };
+    }
+  }
+
+  return { mutations: null, attempts };
+}
+
+/**
+ * Recover a V3 packet and, only when RS identifies a failed block, retry that
+ * block with bounded runner-up optical symbols supplied by temporal fusion.
+ * No wire-format changes are required.
+ */
+export function recoverV3PacketFromSymbolsWithAlternates(
+  symbols,
+  profile = V3_G64_S4_C4_RS,
+  confidences = null,
+  alternateSymbols = null,
+  alternateConfidences = null,
+  options = {},
+) {
+  if (!alternateSymbols || alternateSymbols.length !== profile.encodedSymbolCapacity) {
+    return { ...recoverV3PacketFromSymbols(symbols, profile, confidences), selectiveRetryAttempts: 0, rescuedBlocks: [] };
+  }
+
+  const workingSymbols = symbols.slice();
+  const workingConfidence = confidences ? Float32Array.from(confidences) : null;
+  const rescuedBlocks = [];
+  let selectiveRetryAttempts = 0;
+  const maxRescuedBlocks = options.maxRescuedBlocks ?? 4;
+
+  for (let round = 0; round <= maxRescuedBlocks; round += 1) {
+    try {
+      return {
+        ...recoverV3PacketFromSymbols(workingSymbols, profile, workingConfidence),
+        selectiveRetryAttempts,
+        rescuedBlocks,
+      };
+    } catch (error) {
+      if (error.code !== 'RS16_UNCORRECTABLE' || !Number.isInteger(error.blockIndex) || round >= maxRescuedBlocks) {
+        error.selectiveRetryAttempts = selectiveRetryAttempts;
+        error.rescuedBlocks = [...rescuedBlocks];
+        throw error;
+      }
+
+      const rescue = tryRescueFailedBlock({
+        symbols: workingSymbols,
+        confidences: workingConfidence,
+        alternateSymbols,
+        alternateConfidences,
+        profile,
+        blockIndex: error.blockIndex,
+        maxCandidates: options.maxCandidates ?? 6,
+      });
+      selectiveRetryAttempts += rescue.attempts;
+      if (!rescue.mutations) {
+        error.selectiveRetryAttempts = selectiveRetryAttempts;
+        error.rescuedBlocks = [...rescuedBlocks];
+        throw error;
+      }
+
+      for (const mutation of rescue.mutations) {
+        workingSymbols[mutation.physicalIndex] = mutation.alternate;
+        if (workingConfidence) {
+          workingConfidence[mutation.physicalIndex] = Math.max(0.50, mutation.alternateConfidence);
+        }
+      }
+      rescuedBlocks.push(error.blockIndex);
+    }
+  }
+
+  throw new Error('V3 selective RS retry exhausted unexpectedly');
+}
+
 export function encodeV3Frame(packetBytes, profile = V3_G64_S4_C4_RS) {
   if (!(packetBytes instanceof Uint8Array)) throw new TypeError('encodeV3Frame expects Uint8Array');
   if (packetBytes.length > profile.maxPacketBytes) throw new RangeError(`Packet is ${packetBytes.length} bytes; ${profile.id} allows ${profile.maxPacketBytes}`);

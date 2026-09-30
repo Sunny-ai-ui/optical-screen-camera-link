@@ -14,6 +14,8 @@ self.onmessage = (event) => {
       observation.confidences.buffer,
       observation.shapeConfidences.buffer,
       observation.colorConfidences.buffer,
+      observation.alternateSymbols.buffer,
+      observation.alternateConfidences.buffer,
     ]);
   } catch (error) {
     self.postMessage({ id, ok: false, error: { message: error.message, code: error.code, blockIndex: error.blockIndex } });

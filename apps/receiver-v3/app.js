@@ -136,6 +136,10 @@ function createMetrics() {
     lowConfidenceCellRate: 0,
     colorCalibrationSeparation: 0,
     shapeCalibrationSeparation: 0,
+    refinedCellRate: 0,
+    rsSelectiveRetries: 0,
+    rsRescuedBlocks: '—',
+    failedRsCells: '—',
     payloadCodec: '—',
     payloadIntegrity: '—',
     payloadOriginalBytes: 0,
@@ -178,6 +182,18 @@ function applyV3Diagnostics(diag) {
   if (Number.isFinite(diag.lowConfidenceCellRate)) metrics.lowConfidenceCellRate = diag.lowConfidenceCellRate;
   if (Number.isFinite(diag.colorCalibrationSeparation)) metrics.colorCalibrationSeparation = diag.colorCalibrationSeparation;
   if (Number.isFinite(diag.shapeCalibrationSeparation)) metrics.shapeCalibrationSeparation = diag.shapeCalibrationSeparation;
+  if (Number.isFinite(diag.refinedCellRate)) metrics.refinedCellRate = diag.refinedCellRate;
+  if (Number.isFinite(diag.selectiveRetryAttempts)) metrics.rsSelectiveRetries = diag.selectiveRetryAttempts;
+  if (Array.isArray(diag.rescuedBlocks)) metrics.rsRescuedBlocks = diag.rescuedBlocks.length ? diag.rescuedBlocks.join(',') : '—';
+  if (Array.isArray(diag.failedBlockCells) && diag.failedBlockCells.length) {
+    const weakest = [...diag.failedBlockCells]
+      .filter((cell) => Number.isFinite(cell.confidence))
+      .sort((a, b) => a.confidence - b.confidence)
+      .slice(0, 5);
+    metrics.failedRsCells = weakest
+      .map((cell) => `(${cell.x},${cell.y}) ${(cell.confidence * 100).toFixed(0)}%`)
+      .join(' · ');
+  }
 }
 
 function currentTransportStatus() {
@@ -239,6 +255,10 @@ function renderMetrics() {
     ['Low-confidence cells', `${(metrics.lowConfidenceCellRate * 100).toFixed(1)}%`],
     ['Colour calibration separation', metrics.colorCalibrationSeparation.toFixed(3)],
     ['Shape calibration separation', metrics.shapeCalibrationSeparation.toFixed(3)],
+    ['Locally refined cells', `${(metrics.refinedCellRate * 100).toFixed(1)}%`],
+    ['RS selective retries', metrics.rsSelectiveRetries],
+    ['RS rescued blocks', metrics.rsRescuedBlocks],
+    ['Weakest failed-block cells', metrics.failedRsCells],
     ['Optical decodes', metrics.opticalDecodes],
     ['RS frame rejects', metrics.rsRejects],
     ['Protocol rejects', metrics.protocolRejects],
@@ -495,6 +515,7 @@ function processTemporalObservation(observation, profile) {
   metrics.temporalAttempts += 1;
   try {
     const optical = decodeV3Observation(group.fused, profile);
+    applyV3Diagnostics(optical);
     metrics.opticalDecodes += 1;
     metrics.temporalSuccesses += group.count > 1 ? 1 : 0;
     metrics.lastRsCorrected = optical.correctedSymbols;

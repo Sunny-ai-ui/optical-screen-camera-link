@@ -16,6 +16,7 @@ import {
   renderOpticalFrameSvg,
 } from '../../packages/optical-codec/src/index.js';
 import { describeFrameDwell, resolveFrameDwellMs } from './adaptive-dwell.js';
+import { encodePayload } from '../../packages/payload-codec/src/index.js';
 
 const message = document.querySelector('#message');
 const profileSelect = document.querySelector('#profile');
@@ -36,6 +37,7 @@ let currentIndex = 0;
 let timer = null;
 let activeProfile = V3_G32_S4_C4_RS;
 let visualVariant = 0;
+let payloadInfo = null;
 
 function selectedProfile() {
   if (profileSelect.value === 'v1') return V1_G16_C16;
@@ -99,6 +101,9 @@ function renderCurrentFrame() {
     `Profile: ${activeProfile.id}`,
     `Transport: ${fountain ? 'Fountain' : 'Classic'}`,
     `Input: ${inputBytes} bytes`,
+    payloadInfo ? `Payload: ${payloadInfo.codec}${payloadInfo.enveloped ? ' + SHA-256' : ' + CRC32'}` : null,
+    payloadInfo && payloadInfo.enveloped ? `Payload bytes: ${payloadInfo.envelopeBytes} (${payloadInfo.originalBytes} original)` : null,
+    payloadInfo && payloadInfo.enveloped ? `SHA-256: ${payloadInfo.sha256.slice(0, 12)}…` : null,
     `Frame: ${currentIndex + 1}/${frames.length}`,
     `Session: ${transfer.sessionId}`,
     fountain ? `Source blocks: ${transfer.sourceBlockCount}` : `DATA packets: ${transfer.dataPacketCount}`,
@@ -114,17 +119,23 @@ function renderCurrentFrame() {
   ].filter(Boolean).map((value) => `<span class="tag">${value}</span>`).join('');
 }
 
-function generateFrames() {
+async function generateFrames() {
   stopPlayback();
+  generateButton.disabled = true;
   activeProfile = selectedProfile();
   const encodeFrame = encoderForProfile(activeProfile);
   const transportMode = activeTransportMode();
+  try {
+    payloadInfo = await encodePayload(message.value);
+  } finally {
+    generateButton.disabled = false;
+  }
   transfer = transportMode === 'fountain'
-    ? createFountainTransfer(message.value, {
+    ? createFountainTransfer(payloadInfo.bytes, {
         packetPayloadBytes: activeProfile.recommendedProtocolPayloadBytes,
         overheadRatio: Number(redundancySelect?.value ?? 1.0),
       })
-    : createTransferPackets(message.value, {
+    : createTransferPackets(payloadInfo.bytes, {
         chunkSize: activeProfile.recommendedProtocolPayloadBytes,
       });
   frames = transfer.packets.map((packet) => encodeFrame(packet, activeProfile));
@@ -140,24 +151,24 @@ function advanceFrame(step = 1) {
   renderCurrentFrame();
 }
 
-function startPlayback() {
-  if (!frames.length) generateFrames();
+async function startPlayback() {
+  if (!frames.length) await void generateFrames();
   stopPlayback();
   playButton.textContent = 'Stop';
   const interval = resolveFrameDwellMs(rateSelect.value, activeProfile);
   timer = setInterval(() => advanceFrame(1), interval);
 }
 
-generateButton.addEventListener('click', generateFrames);
-profileSelect.addEventListener('change', generateFrames);
-transportSelect.addEventListener('change', generateFrames);
-redundancySelect?.addEventListener('change', generateFrames);
+generateButton.addEventListener('click', () => { void generateFrames(); });
+profileSelect.addEventListener('change', () => { void generateFrames(); });
+transportSelect.addEventListener('change', () => { void generateFrames(); });
+redundancySelect?.addEventListener('change', () => { void generateFrames(); });
 previousButton.addEventListener('click', () => { stopPlayback(); advanceFrame(-1); });
 nextButton.addEventListener('click', () => { stopPlayback(); advanceFrame(1); });
-playButton.addEventListener('click', () => { if (timer) stopPlayback(); else startPlayback(); });
+playButton.addEventListener('click', () => { if (timer) stopPlayback(); else void startPlayback(); });
 rateSelect.addEventListener('change', () => {
   const wasPlaying = Boolean(timer);
-  if (wasPlaying) startPlayback();
+  if (wasPlaying) void startPlayback();
   else renderCurrentFrame();
 });
 fullscreenButton.addEventListener('click', async () => {

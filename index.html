@@ -23,30 +23,42 @@
 </head>
 <body>
 <main>
-  <h1>Optical Link V3</h1>
-  <p class="lead">Experimental screen-to-camera optical modem. V3 moves away from low-density multi-state cells and uses a 64×64 high-density grid, simple 4-shape × 4-colour symbols, timing tracks, native-resolution camera decoding, local locator tracking, and Reed–Solomon error correction.</p>
+  <h1>Optical Screen-to-Camera Link</h1>
+  <p class="lead">One-way visible-light data transfer using a normal display and phone camera. The current production baseline is G32; M9 is a new experimental 3×3 parallel superframe designed for lighter, more repeatable decoding.</p>
 
   <div class="grid">
     <section class="card">
-      <h2>1. V3 Sender</h2>
-      <p>Generate the high-density 64×64 optical stream. The first V3 profile uses ~1 KB DATA chunks at 1 fps while the physical link is validated.</p>
-      <a class="button" href="./apps/sender-web/">Open Sender</a>
+      <h2>G32 Production Sender</h2>
+      <p>Proven single-frame G32 path with temporal fusion, RS(15,11), fountain transport and SHA-256 payload verification.</p>
+      <a class="button" href="./apps/sender-web/">Open G32 Sender</a>
     </section>
 
     <section class="card">
-      <h2>2. V3 Receiver</h2>
-      <p>Low-resolution locator tracking plus a separate native-resolution 768×768 data warp. Timing phase and RS correction are measured live.</p>
-      <a class="button" href="./apps/receiver-v3/">Open V3 Receiver</a>
+      <h2>G32 Production Receiver</h2>
+      <p>Stable fallback path locked to 32×32 while reliability and runtime performance are optimized.</p>
+      <a class="button" href="./apps/receiver-v3/">Open G32 Receiver</a>
+    </section>
+
+    <section class="card">
+      <h2>M9 3×3 Experimental Sender</h2>
+      <p>Shows nine small custom optical codes simultaneously: eight data shards plus one spatial-parity tile.</p>
+      <a class="button" href="./apps/sender-m9/">Open M9 Sender</a>
+    </section>
+
+    <section class="card">
+      <h2>M9 3×3 Experimental Receiver</h2>
+      <p>One global screen lock, nine fixed crops, per-tile RS + CRC16, tile caching and one-tile parity recovery.</p>
+      <a class="button" href="./apps/receiver-m9/">Open M9 Receiver</a>
     </section>
 
     <section class="card">
       <h2>Legacy Lab</h2>
-      <p>Keep the V1/V2 receiver available for comparison with the earlier colour, shape and background experiments.</p>
+      <p>Earlier V1/V2 receiver for historical comparison.</p>
       <a class="button secondary" href="./apps/receiver-web/">Legacy Receiver</a>
     </section>
   </div>
 
-  <p class="note">V3 baseline: <code>V3-G64-S4-C4-RS15-11</code> · 768×768 logical ROI · 64×64 cells · 4 bits/cell · 3,810 encoded data cells · RS(15,11) correcting up to 2 wrong optical symbols per codeword · 1,024-byte recommended DATA payload.</p>
+  <p class="note">Production baseline: <code>V3-G32-S4-C4-RS15-11</code>. Experimental M9: one outer locator frame + 3×3 mini-tiles; each tile is 13×13 cells with a timing border, self-calibration, 8 RS codewords and CRC16. Tile 9 carries XOR parity so one missing data tile can be recovered without reverse communication.</p>
 </main>
 </body>
 </html>

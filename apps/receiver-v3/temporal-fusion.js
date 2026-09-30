@@ -93,6 +93,10 @@ export function fuseV3Observations(observations) {
     averageShapeConfidence: shapeConfidences.reduce((a, b) => a + b, 0) / length,
     averageColorConfidence: colorConfidences.reduce((a, b) => a + b, 0) / length,
     averageConfidence: confidences.reduce((a, b) => a + b, 0) / length,
+    lowConfidenceCellRate: mean('lowConfidenceCellRate'),
+    colorCalibrationSeparation: mean('colorCalibrationSeparation'),
+    shapeCalibrationSeparation: mean('shapeCalibrationSeparation'),
+    calibrationConfidenceScale: mean('calibrationConfidenceScale') || 1,
     observationCount: observations.length,
     cellAgreement: agreementSum / length,
   };
@@ -105,6 +109,12 @@ export class TemporalObservationStore {
     this.minAgreement = minAgreement;
     this.identityIndices = identityIndices;
     this.reset();
+  }
+
+  configure({ maxAgeMs = this.maxAgeMs, maxObservations = this.maxObservations } = {}) {
+    if (Number.isFinite(maxAgeMs)) this.maxAgeMs = Math.max(250, maxAgeMs);
+    if (Number.isFinite(maxObservations)) this.maxObservations = Math.max(1, Math.round(maxObservations));
+    return this;
   }
 
   reset() {

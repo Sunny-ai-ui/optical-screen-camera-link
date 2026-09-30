@@ -11,6 +11,13 @@ import { FountainReassembler } from '../../packages/fountain/src/index.js';
 import { ChannelCalibrator } from './channel-calibration.js';
 import { optimizeLink } from './link-optimizer.js';
 import { calibrateObservationConfidences, deriveDecoderTuning } from './decoder-tuning.js';
+import {
+  computeBusyLoopDelayMs,
+  computeTemporalWindowMs,
+  ProfileLockController,
+  progressiveEvidenceTarget,
+  qualityGateTolerance,
+} from './receiver-policy.js';
 
 const video = document.querySelector('#camera');
 const sourceCanvas = document.querySelector('#sourceCanvas');
@@ -53,6 +60,7 @@ let temporalStore = new TemporalObservationStore();
 let decoderWorker = null;
 let adaptiveLink = new AdaptiveLinkController();
 let channelCalibrator = new ChannelCalibrator();
+let profileLock = new ProfileLockController({ switchStreak: 4 });
 let decoderBusy = false;
 let workerRequestId = 0;
 const workerRequests = new Map();
@@ -104,6 +112,9 @@ function createMetrics() {
     fountainRecoveredBlocks: 0,
     fountainProgress: 0,
     evidenceTarget: 2,
+    progressiveEvidenceTarget: 2,
+    temporalWindowMs: 0,
+    qualityGateTolerance: 0,
     linkRecommendation: 'hold',
     recommendedProfileId: '—',
     goodLinkStreak: 0,
@@ -202,6 +213,9 @@ function renderMetrics() {
     ['Recovered source blocks', metrics.fountainSourceBlocks ? `${metrics.fountainRecoveredBlocks}/${metrics.fountainSourceBlocks}` : '—'],
     ['Fountain progress', metrics.fountainSourceBlocks ? `${(metrics.fountainProgress * 100).toFixed(1)}%` : '—'],
     ['Evidence target', metrics.evidenceTarget],
+    ['RS first-attempt target', metrics.progressiveEvidenceTarget],
+    ['Temporal evidence window', metrics.temporalWindowMs ? `${(metrics.temporalWindowMs / 1000).toFixed(1)} s` : '—'],
+    ['Quality-gate tolerance', `${(metrics.qualityGateTolerance * 100).toFixed(1)}%`],
     ['Adaptive action', metrics.linkRecommendation],
     ['Recommended profile', metrics.recommendedProfileId],
     ['Good/bad streak', `${metrics.goodLinkStreak}/${metrics.badLinkStreak}`],
@@ -250,6 +264,7 @@ function resetTransfer(reason = 'manual reset') {
   temporalStore.reset();
   adaptiveLink.reset();
   channelCalibrator.reset();
+  profileLock.reset();
   lastCompletedSession = null;
   const preserved = {
     profileId: metrics.profileId,
@@ -279,6 +294,7 @@ function switchProfile(profile) {
   temporalStore = createTemporalStore(profile);
   adaptiveLink.reset();
   channelCalibrator.reset();
+  profileLock.reset();
   lastCompletedSession = null;
   metrics.firstAcceptedAt = null;
   metrics.completedAt = null;
@@ -425,7 +441,9 @@ function processTemporalObservation(observation, profile) {
   observation = calibratedObservation;
   applyCalibrationStatus(calibration, profile.id);
   const learnedMinimum = calibration.minimumFrameQuality;
-  if (!shouldDecodeObservation(quality, learnedMinimum)) {
+  const gateTolerance = qualityGateTolerance(calibration.state);
+  metrics.qualityGateTolerance = gateTolerance;
+  if (!shouldDecodeObservation(quality, learnedMinimum, gateTolerance)) {
     applyAdaptiveStatus(adaptiveLink.add({
       profileId: profile.id,
       frameQuality: quality,
@@ -439,18 +457,32 @@ function processTemporalObservation(observation, profile) {
     return false;
   }
 
+  const preStatus = adaptiveLink.status(profile.id);
+  const evidenceTarget = Math.max(1, Math.min(6, preStatus.evidenceTarget));
+  const firstAttemptTarget = progressiveEvidenceTarget({
+    evidenceTarget,
+    frameQuality: quality,
+    learnedMinimum,
+    averageConfidence: observation.averageConfidence ?? 0,
+  });
+  const temporalWindowMs = computeTemporalWindowMs({
+    decoderLatencyMs: metrics.decoderLatencyMs,
+    evidenceTarget,
+  });
+  temporalStore.configure({ maxAgeMs: temporalWindowMs, maxObservations: 6 });
+  metrics.evidenceTarget = evidenceTarget;
+  metrics.progressiveEvidenceTarget = firstAttemptTarget;
+  metrics.temporalWindowMs = temporalWindowMs;
+
   const group = temporalStore.add(observation);
   metrics.observationCount = group.count;
   metrics.temporalTransitions = temporalStore.transitions;
   metrics.cellAgreement = group.fused.cellAgreement ?? group.agreement;
   applyV3Diagnostics(group.fused);
 
-  const preStatus = adaptiveLink.status(profile.id);
-  const evidenceTarget = Math.max(1, Math.min(6, preStatus.evidenceTarget));
-  metrics.evidenceTarget = evidenceTarget;
-  const canTry = group.count >= evidenceTarget || (quality >= 0.90 && group.count >= Math.min(2, evidenceTarget));
+  const canTry = group.count >= firstAttemptTarget || (quality >= 0.90 && group.count >= Math.min(2, firstAttemptTarget));
   if (!canTry) {
-    setPill(decodeState, `Collecting evidence ${group.count}/${evidenceTarget}`, 'working');
+    setPill(decodeState, `Collecting evidence ${group.count}/${firstAttemptTarget} · window ${(temporalWindowMs / 1000).toFixed(1)}s`, 'working');
     return false;
   }
 
@@ -590,7 +622,13 @@ function stopCamera() {
   log('Camera stopped.');
 }
 
-function scheduleLoop(delay = receiverMode === 'temporal' ? 90 : 650) {
+function nextLoopDelay() {
+  if (receiverMode !== 'temporal') return 650;
+  if (decoderBusy) return computeBusyLoopDelayMs(metrics.decoderLatencyMs);
+  return 90;
+}
+
+function scheduleLoop(delay = nextLoopDelay()) {
   if (!running) return;
   loopTimer = setTimeout(processFrame, delay);
 }
@@ -719,7 +757,16 @@ async function processFrame() {
       return;
     }
 
-    switchProfile(probe.profile);
+    const lockDecision = profileLock.consider(probe, activeProfile?.id ?? null);
+    if (!lockDecision.accepted) {
+      const candidate = lockDecision.candidateProfileId?.replace('V3-', '').replace('-S4-C4-RS15-11', '') ?? 'unknown';
+      setPill(decodeState, `Confirming ${candidate} density ${lockDecision.candidateStreak}/4`, 'working');
+      drawAutoFiducialOverlay(sourceCanvas, detection, 'found');
+      renderMetrics();
+      scheduleLoop();
+      return;
+    }
+    if (!activeProfile || lockDecision.switched) switchProfile(probe.profile);
     const profile = activeProfile ?? V3_G32_S4_C4_RS;
     coarseMisses = 0;
     metrics.coarseLocks += 1;
@@ -758,11 +805,12 @@ async function processFrame() {
     } else {
       const started = performance.now();
       try {
-        // Schedule the next camera sampling pass before waiting for the worker.
-        // This keeps acquisition/tracking alive while optical classification runs.
+        // Start the worker first so nextLoopDelay() can use the busy state and
+        // measured decoder latency instead of creating a 90 ms skip storm.
+        const observationPromise = observeInWorker(v3Roi, probe.rotation, profile);
         scheduleLoop();
         scheduledEarly = true;
-        const observation = await observeInWorker(v3Roi, probe.rotation, profile);
+        const observation = await observationPromise;
         metrics.decoderLatencyMs = performance.now() - started;
         if (observation) decodedOk = processTemporalObservation(observation, profile);
       } catch (error) {

@@ -9,3 +9,8 @@ test('quality scorer rewards strong timing, resolution and confidence', () => {
   assert.equal(shouldDecodeObservation(strong), true);
   assert.equal(shouldDecodeObservation(weak), false);
 });
+
+test('quality gate accepts a near-threshold observation within explicit tolerance', () => {
+  assert.equal(shouldDecodeObservation(0.563, 0.57, 0.03), true);
+  assert.equal(shouldDecodeObservation(0.52, 0.57, 0.03), false);
+});

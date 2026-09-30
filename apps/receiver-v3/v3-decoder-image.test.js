@@ -54,4 +54,6 @@ test('V3 image decoder survives a consistent camera-like channel colour shift', 
   assert.deepEqual([...decoded.packetBytes], [...packet]);
   assert.ok(observation.averageColorConfidence > 0.65);
   assert.ok(observation.averageShapeConfidence > 0.45);
+  assert.ok(observation.colorCalibrationSeparation > 0.05);
+  assert.ok(observation.shapeCalibrationSeparation > 0.10);
 });

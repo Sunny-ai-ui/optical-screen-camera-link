@@ -139,6 +139,7 @@ function createMetrics() {
     refinedCellRate: 0,
     rsSelectiveRetries: 0,
     rsRescuedBlocks: '—',
+    failedRsCells: '—',
     payloadCodec: '—',
     payloadIntegrity: '—',
     payloadOriginalBytes: 0,
@@ -184,6 +185,15 @@ function applyV3Diagnostics(diag) {
   if (Number.isFinite(diag.refinedCellRate)) metrics.refinedCellRate = diag.refinedCellRate;
   if (Number.isFinite(diag.selectiveRetryAttempts)) metrics.rsSelectiveRetries = diag.selectiveRetryAttempts;
   if (Array.isArray(diag.rescuedBlocks)) metrics.rsRescuedBlocks = diag.rescuedBlocks.length ? diag.rescuedBlocks.join(',') : '—';
+  if (Array.isArray(diag.failedBlockCells) && diag.failedBlockCells.length) {
+    const weakest = [...diag.failedBlockCells]
+      .filter((cell) => Number.isFinite(cell.confidence))
+      .sort((a, b) => a.confidence - b.confidence)
+      .slice(0, 5);
+    metrics.failedRsCells = weakest
+      .map((cell) => `(${cell.x},${cell.y}) ${(cell.confidence * 100).toFixed(0)}%`)
+      .join(' · ');
+  }
 }
 
 function currentTransportStatus() {
@@ -248,6 +258,7 @@ function renderMetrics() {
     ['Locally refined cells', `${(metrics.refinedCellRate * 100).toFixed(1)}%`],
     ['RS selective retries', metrics.rsSelectiveRetries],
     ['RS rescued blocks', metrics.rsRescuedBlocks],
+    ['Weakest failed-block cells', metrics.failedRsCells],
     ['Optical decodes', metrics.opticalDecodes],
     ['RS frame rejects', metrics.rsRejects],
     ['Protocol rejects', metrics.protocolRejects],

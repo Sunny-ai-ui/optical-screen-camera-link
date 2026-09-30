@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>M9 3×3 Optical Sender</title>
+  <style>
+    :root{font-family:Inter,system-ui,sans-serif;color:#172033;background:#f4f6f8}
+    *{box-sizing:border-box} body{margin:0;padding:20px} main{max-width:1100px;margin:0 auto}
+    .panel{background:#fff;border:1px solid #dfe4ea;border-radius:14px;padding:18px;margin:16px 0}
+    textarea{width:100%;min-height:110px;padding:12px;font:inherit}
+    button,select{padding:10px 14px;margin:8px 6px 0 0;font:inherit}
+    #frameHost{display:grid;place-items:center;background:#05070a;min-height:420px;padding:18px;border-radius:10px;overflow:auto}
+    #frameHost svg{width:min(94vw,900px);height:auto;max-height:90vh}
+    #frameHost:fullscreen{width:100vw;height:100vh;padding:8px;background:#000}
+    #frameHost:fullscreen svg{width:min(98vw,98vh);max-height:98vh}
+    .stats{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;font:13px ui-monospace,Consolas,monospace}
+    .tag{background:#edf2f7;border-radius:6px;padding:5px 8px}
+    .hint{color:#5b6474;line-height:1.5}
+    a{color:#1769aa}
+  </style>
+</head>
+<body>
+<main>
+  <h1>M9 3×3 Optical Sender</h1>
+  <p class="hint">Experimental parallel superframe: 8 data tiles + 1 XOR parity tile. Production G32 remains unchanged.</p>
+  <section class="panel">
+    <label for="message"><strong>Data to transmit</strong></label>
+    <textarea id="message">M9 3x3 optical superframe test</textarea>
+    <div>
+      <button id="generate">Generate</button>
+      <button id="previous">Previous</button>
+      <button id="next">Next</button>
+      <button id="play">Play</button>
+      <select id="rate">
+        <option value="2500">2.5 s / superframe</option>
+        <option value="2000" selected>2.0 s / superframe</option>
+        <option value="1500">1.5 s / superframe</option>
+        <option value="1000">1.0 s / superframe</option>
+      </select>
+      <button id="fullscreen">Fullscreen</button>
+      <a href="../sender-web/">Back to G32 Production Sender</a>
+    </div>
+    <div id="stats" class="stats"></div>
+    <p class="hint"><strong>M9 layout:</strong> 9 fixed mini-codes are shown simultaneously. Each mini-code has its own timing border, colour/shape calibration, RS(15,11) protection and CRC16. Tile 9 is spatial parity, so one missing data tile can be recovered without a reverse channel.</p>
+  </section>
+  <section class="panel"><div id="frameHost"></div></section>
+</main>
+<script type="module" src="./app.js"></script>
+</body>
+</html>

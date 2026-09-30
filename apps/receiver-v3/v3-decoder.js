@@ -582,6 +582,22 @@ export function decodeV3Observation(observation, profile = V3_G64_S4_C4_RS) {
       observation.alternateConfidences,
     );
   } catch (error) {
+    const coordinates = getV3DataCellCoordinates(profile);
+    const failedBlockCells = Number.isInteger(error.blockIndex)
+      ? Array.from({ length: profile.rsN }, (_, position) => {
+          const physicalIndex = position * profile.rsCodewordCount + error.blockIndex;
+          const coordinate = coordinates[physicalIndex];
+          return {
+            position,
+            physicalIndex,
+            x: coordinate?.x ?? null,
+            y: coordinate?.y ?? null,
+            confidence: observation.confidences?.[physicalIndex] ?? null,
+            alternateSymbol: observation.alternateSymbols?.[physicalIndex] ?? null,
+            alternateConfidence: observation.alternateConfidences?.[physicalIndex] ?? null,
+          };
+        })
+      : [];
     error.v3Diagnostics = {
       timingSeparation: observation.timingSeparation,
       signatureSeparation: observation.signatureSeparation,
@@ -597,6 +613,7 @@ export function decodeV3Observation(observation, profile = V3_G64_S4_C4_RS) {
       refinedCellRate: observation.refinedCellRate,
       selectiveRetryAttempts: error.selectiveRetryAttempts ?? 0,
       rescuedBlocks: error.rescuedBlocks ?? [],
+      failedBlockCells,
     };
     throw error;
   }

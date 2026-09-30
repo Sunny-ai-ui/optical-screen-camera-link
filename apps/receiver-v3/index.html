@@ -40,7 +40,7 @@
 </head>
 <body>
 <main>
-  <h1>Optical Receiver V3.2D Calibrated</h1>
+  <h1>Optical Receiver v0.4.1 Stable Temporal</h1>
   <p class="sub">Temporal fusion · physical-channel learning · RS(15,11) · fountain recovery · adaptive 32×32 / 48×48 / 64×64</p>
 
   <div class="toolbar">
@@ -67,7 +67,7 @@
       <span id="transferState" class="pill">Waiting</span>
     </div>
     <div id="cameraError" hidden></div>
-    <p class="hint"><strong class="important">V3.2D calibration test:</strong> keep the sender on one profile for the first 10–20 usable observations so the receiver can learn the physical channel. Watch <strong>Calibration</strong>, <strong>Learned quality gate</strong>, <strong>Suggested sender dwell</strong>, and <strong>Suggested fountain extra</strong>. Because the link is one-way, these are safe recommendations rather than remote sender commands. Then  use <strong>Resilient Fountain</strong> on the sender. Missing complete optical frames can now be recovered from redundant droplets. <strong>Temporal test:</strong> default mode now fuses compatible camera observations before RS. Use <code>?mode=legacy</code> for an A/B comparison. Start with choose <strong>V3 Robust · 32×32</strong> on the sender, use <strong>1 fps</strong> and Fullscreen. The receiver detects the density automatically. At the same distance that gave ~8 px/cell on 64×64, 32×32 should give roughly <strong>16 px/cell</strong>. Only move to 48×48 after Robust is decoding reliably.</p>
+    <p class="hint"><strong class="important">v0.4.1 receiver test:</strong> start with <strong>V3 Robust · 32×32</strong> and keep the sender on one profile while the receiver learns the channel. The receiver now keeps evidence long enough for slower phone decoders, starts progressive RS attempts at 3–4 strong observations, and requires repeated coarse evidence before changing density. Watch <strong>Calibration</strong>, <strong>Learned quality gate</strong>, <strong>Suggested sender dwell</strong>, and <strong>Suggested fountain extra</strong>. Because the link is one-way, these are safe recommendations rather than remote sender commands. Then  use <strong>Resilient Fountain</strong> on the sender. Missing complete optical frames can now be recovered from redundant droplets. <strong>Temporal test:</strong> default mode now fuses compatible camera observations before RS. Use <code>?mode=legacy</code> for an A/B comparison. Start with choose <strong>V3 Robust · 32×32</strong> on the sender, use <strong>1 fps</strong> and Fullscreen. The receiver detects the density automatically. At the same distance that gave ~8 px/cell on 64×64, 32×32 should give roughly <strong>16 px/cell</strong>. Only move to 48×48 after Robust is decoding reliably.</p>
   </section>
 
   <section class="panel">

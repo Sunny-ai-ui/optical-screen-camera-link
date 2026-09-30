@@ -111,3 +111,27 @@ test('temporal fusion recovers a packet when separate camera observations each e
   const recovered = recoverV3PacketFromSymbols(fused.symbols, profile, fused.confidences);
   assert.deepEqual(recovered.packetBytes, packet);
 });
+
+test('temporal store can extend its lifetime for slow decoders', () => {
+  const store = new TemporalObservationStore({ maxObservations: 6, maxAgeMs: 1200 });
+  store.configure({ maxAgeMs: 7000 });
+  for (let i = 0; i < 6; i += 1) {
+    const result = store.add(observation([1, 2, 3, 4]), i * 900);
+    assert.equal(result.count, i + 1);
+  }
+});
+
+test('temporal fusion preserves calibration diagnostics', () => {
+  const a = observation([1, 2, 3], 0.9);
+  const b = observation([1, 2, 3], 0.9);
+  a.colorCalibrationSeparation = 0.31;
+  b.colorCalibrationSeparation = 0.29;
+  a.shapeCalibrationSeparation = 1.02;
+  b.shapeCalibrationSeparation = 0.98;
+  a.lowConfidenceCellRate = 0.04;
+  b.lowConfidenceCellRate = 0.02;
+  const fused = fuseV3Observations([a, b]);
+  assert.ok(Math.abs(fused.colorCalibrationSeparation - 0.30) < 1e-9);
+  assert.ok(Math.abs(fused.shapeCalibrationSeparation - 1.00) < 1e-9);
+  assert.ok(Math.abs(fused.lowConfidenceCellRate - 0.03) < 1e-9);
+});

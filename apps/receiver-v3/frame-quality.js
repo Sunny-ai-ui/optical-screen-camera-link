@@ -7,6 +7,8 @@ export function scoreV3FrameQuality({ timingSeparation = 0, signatureSeparation 
   return Math.max(0, Math.min(1, timing * 0.28 + signature * 0.18 + resolution * 0.20 + confidence * 0.34 - ambiguityPenalty));
 }
 
-export function shouldDecodeObservation(quality, minimum = 0.42) {
-  return Number.isFinite(quality) && quality >= minimum;
+export function shouldDecodeObservation(quality, minimum = 0.42, tolerance = 0) {
+  const slack = Number.isFinite(tolerance) ? Math.max(0, tolerance) : 0;
+  return Number.isFinite(quality) && quality + slack >= minimum;
 }
+

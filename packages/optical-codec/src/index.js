@@ -9,3 +9,4 @@ export * from './m9-frame.js';
 export * from './fiducials.js';
 export * from './shapes.js';
 export * from './svg-renderer.js';
+export * from './m9-renderer.js';

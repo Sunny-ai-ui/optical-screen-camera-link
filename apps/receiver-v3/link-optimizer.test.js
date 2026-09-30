@@ -23,3 +23,16 @@ test('optimizer falls back and adds redundancy on weak link', () => {
   assert.equal(result.recommendedProfileId, 'V3-G48-S4-C4-RS15-11');
   assert.equal(result.recommendedFountainOverhead, 1.5);
 });
+
+
+test('optimizer can tune dwell and redundancy while profile remains locked to G32', () => {
+  const result = optimizeLink({
+    profileId: 'V3-G32-S4-C4-RS15-11',
+    lockedProfileId: 'V3-G32-S4-C4-RS15-11',
+    linkStatus: { score: 0.96 },
+    calibration: { decodeSuccessRate: 1, averageConfidence: 0.96, decodeSamples: 12 },
+  });
+  assert.equal(result.recommendedProfileId, 'V3-G32-S4-C4-RS15-11');
+  assert.equal(result.mode, 'fast-stable');
+  assert.ok(result.recommendedFountainOverhead < 1);
+});

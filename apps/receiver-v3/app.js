@@ -308,26 +308,11 @@ function resetTransfer(reason = 'manual reset') {
   renderMetrics();
 }
 
-function switchProfile(profile) {
-  const lockedProfile = V3_G32_S4_C4_RS;
-  if (!profile || activeProfile?.id === lockedProfile.id) return;
-  const previous = activeProfile?.id ?? 'none';
-  activeProfile = lockedProfile;
-  metrics.profileId = profile.id;
-  receiver = new TransferReassembler();
-  fountainReceiver = new FountainReassembler();
-  transportMode = 'waiting';
-  seenPackets.clear();
-  temporalStore = createTemporalStore(profile);
-  adaptiveLink.reset();
-  channelCalibrator.reset();
-  profileLock.reset();
-  lastCompletedSession = null;
-  metrics.firstAcceptedAt = null;
-  metrics.completedAt = null;
-  output.textContent = 'Waiting for a complete V3 transfer…';
-  setPill(transferState, 'Waiting');
-  log(`V3 density lock: ${previous} → ${profile.id}`);
+function switchProfile() {
+  // Production profile is deliberately fixed. Keep this helper as a guard for
+  // older call sites, but never allow a runtime density change.
+  activeProfile = V3_G32_S4_C4_RS;
+  metrics.profileId = V3_G32_S4_C4_RS.id;
 }
 
 function probeAdaptiveProfile(canvas) {
@@ -360,7 +345,13 @@ function saveDebugSnapshot() {
     transfer: currentTransportStatus(),
     temporalObservationCount: temporalStore.observations?.length ?? 0,
     channelCalibration: channelCalibrator.summary(),
-    linkOptimization: optimizeLink({ profileId: activeProfile?.id, linkStatus: adaptiveLink.status(activeProfile?.id), calibration: channelCalibrator.summary(), fountainProgress: metrics.fountainProgress }),
+    linkOptimization: optimizeLink({
+      profileId: V3_G32_S4_C4_RS.id,
+      linkStatus: adaptiveLink.status(V3_G32_S4_C4_RS.id),
+      calibration: channelCalibrator.summary(),
+      fountainProgress: metrics.fountainProgress,
+      lockedProfileId: V3_G32_S4_C4_RS.id,
+    }),
   };
   downloadBlob(new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' }), `v3-debug-${stamp}.json`);
   log('Saved V3 ROI and receiver diagnostics snapshot.');

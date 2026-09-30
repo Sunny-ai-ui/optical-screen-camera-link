@@ -10,6 +10,9 @@ export const M9_RS_CODEWORDS = 8;
 export const M9_TILE_SYMBOLS = M9_RS_CODEWORDS * 15;
 export const M9_PACKET_CAPACITY = M9_DATA_TILE_COUNT * M9_SHARD_BYTES;
 export const M9_TILE_MARKER = Object.freeze({ x: 6, y: 6 });
+export const M9_HEADER_BITS = 40;
+export const M9_HEADER_MAGIC = 0b1011;
+export const M9_HEADER_VERSION = 1;
 
 function crc16Ccitt(bytes) {
   let crc = 0xFFFF;
@@ -105,6 +108,15 @@ export function encodeM9Tile({ frameId, tileIndex, shard }) {
     }),
   );
 
+  for (let colorIndex = 0; colorIndex < 4; colorIndex += 1) {
+    const x = 2 + colorIndex;
+    cells[0][x] = { x, y: 0, kind: 'm9-color-calibration', colorIndex };
+  }
+  for (let shapeId = 0; shapeId < 4; shapeId += 1) {
+    const x = 7 + shapeId;
+    cells[0][x] = { x, y: 0, kind: 'm9-shape-calibration', shapeId };
+  }
+
   cells[M9_TILE_MARKER.y][M9_TILE_MARKER.x] = {
     x: M9_TILE_MARKER.x,
     y: M9_TILE_MARKER.y,
@@ -169,6 +181,66 @@ export function splitPacketIntoM9Shards(packetBytes) {
   return [...shards, parity];
 }
 
+function crc8(bytes) {
+  let crc = 0;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = (crc & 0x80) ? ((crc << 1) ^ 0x07) : (crc << 1);
+      crc &= 0xFF;
+    }
+  }
+  return crc;
+}
+
+export function encodeM9HeaderBits(frameId, packetLength) {
+  if (!Number.isInteger(frameId) || frameId < 0 || frameId > 0xFFFF) throw new RangeError('frameId must be 0..65535');
+  if (!Number.isInteger(packetLength) || packetLength < 1 || packetLength > M9_PACKET_CAPACITY) throw new RangeError('packetLength out of range');
+  let value = 0n;
+  value = (value << 4n) | BigInt(M9_HEADER_MAGIC);
+  value = (value << 3n) | BigInt(M9_HEADER_VERSION);
+  value = (value << 16n) | BigInt(frameId);
+  value = (value << 9n) | BigInt(packetLength);
+  const header = new Uint8Array(4);
+  for (let i = 3; i >= 0; i -= 1) {
+    header[i] = Number(value & 0xFFn);
+    value >>= 8n;
+  }
+  const bytes = new Uint8Array(5);
+  bytes.set(header, 0);
+  bytes[4] = crc8(header);
+  const bits = [];
+  for (const byte of bytes) for (let shift = 7; shift >= 0; shift -= 1) bits.push((byte >>> shift) & 1);
+  return Uint8Array.from(bits);
+}
+
+export function decodeM9HeaderBits(bits) {
+  if (!(bits instanceof Uint8Array) || bits.length !== M9_HEADER_BITS) throw new TypeError(`M9 header must contain ${M9_HEADER_BITS} bits`);
+  const bytes = new Uint8Array(5);
+  for (let index = 0; index < bits.length; index += 1) bytes[Math.floor(index / 8)] |= (bits[index] & 1) << (7 - (index % 8));
+  if (crc8(bytes.subarray(0, 4)) !== bytes[4]) {
+    const error = new Error('M9 header CRC8 mismatch');
+    error.code = 'M9_HEADER_CRC';
+    throw error;
+  }
+  let value = 0n;
+  for (let i = 0; i < 4; i += 1) value = (value << 8n) | BigInt(bytes[i]);
+  const packetLength = Number(value & 0x1FFn);
+  value >>= 9n;
+  const frameId = Number(value & 0xFFFFn);
+  value >>= 16n;
+  const version = Number(value & 0x7n);
+  value >>= 3n;
+  const magic = Number(value & 0xFn);
+  if (magic !== M9_HEADER_MAGIC || version !== M9_HEADER_VERSION) {
+    const error = new Error('M9 header magic/version mismatch');
+    error.code = 'M9_HEADER_BAD_MAGIC';
+    throw error;
+  }
+  if (packetLength < 1 || packetLength > M9_PACKET_CAPACITY) throw new Error('M9 header packet length invalid');
+  return { frameId, packetLength, version };
+}
+
 export function encodeM9Superframe(packetBytes, { frameId = 0 } = {}) {
   const shards = splitPacketIntoM9Shards(packetBytes);
   return {
@@ -176,6 +248,7 @@ export function encodeM9Superframe(packetBytes, { frameId = 0 } = {}) {
     modulation: 'M9-S4C4-RS15-11',
     frameId,
     packetLength: packetBytes.length,
+    headerBits: encodeM9HeaderBits(frameId, packetBytes.length),
     packetCapacity: M9_PACKET_CAPACITY,
     tiles: shards.map((shard, tileIndex) => encodeM9Tile({ frameId, tileIndex, shard })),
   };

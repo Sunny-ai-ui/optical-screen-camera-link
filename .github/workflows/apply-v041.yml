@@ -1,0 +1,38 @@
+name: Apply v0.4.1 Receiver Fix
+
+on:
+  push:
+    branches:
+      - fix/v0.4.1-receiver-scheduling
+    paths:
+      - '.github/workflows/apply-v041.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v0.4.1-receiver-scheduling
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply receiver fix
+        run: |
+          set -euo pipefail
+          patch -p1 < .v041.patch
+          rm .v041.patch
+      - name: Run full test suite
+        run: npm test
+      - name: Commit validated source
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: stabilize v0.4.1 temporal receiver"
+          git push origin HEAD:fix/v0.4.1-receiver-scheduling

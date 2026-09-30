@@ -40,12 +40,7 @@ let visualVariant = 0;
 let payloadInfo = null;
 
 function selectedProfile() {
-  if (profileSelect.value === 'v1') return V1_G16_C16;
-  if (profileSelect.value === 'v21') return V21_S8_C16_R3;
-  if (profileSelect.value === 'v22') return V22_S8_C8_B4_R3;
-  if (profileSelect.value === 'v2') return V2_S8_C32_R3;
-  if (profileSelect.value === 'v3b') return V3_G48_S4_C4_RS;
-  if (profileSelect.value === 'v3d') return V3_G64_S4_C4_RS;
+  // v0.4.4 production baseline: keep the live sender fixed to G32.
   return V3_G32_S4_C4_RS;
 }
 

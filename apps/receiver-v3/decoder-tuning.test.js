@@ -13,7 +13,7 @@ test('decoder tuning derives bounded gates from a ready calibration', () => {
   assert.ok(tuning.confidenceScale > 1);
 });
 
-test('weak observation confidence is penalized relative to learned channel baseline', () => {
+test('ready calibration preserves per-cell confidence and records channel ratio only', () => {
   const observation = {
     confidences: new Float32Array([0.6, 0.5]),
     shapeConfidences: new Float32Array([0.7, 0.6]),
@@ -24,6 +24,7 @@ test('weak observation confidence is penalized relative to learned channel basel
   const calibrated = calibrateObservationConfidences(observation, {
     state: 'ready', shapeConfidence: 0.9, colourConfidence: 0.9,
   });
-  assert.ok(calibrated.averageConfidence < 0.55);
-  assert.ok(calibrated.calibrationConfidenceScale < 1);
+  assert.deepEqual([...calibrated.confidences], [...observation.confidences]);
+  assert.equal(calibrated.calibrationConfidenceScale, 1);
+  assert.ok(calibrated.channelConfidenceRatio < 1);
 });

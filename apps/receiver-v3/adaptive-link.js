@@ -55,10 +55,11 @@ export function evidenceTargetForScore(score) {
 }
 
 export class AdaptiveLinkController {
-  constructor({ windowSize = 12, upgradeStreak = 8, downgradeStreak = 3 } = {}) {
+  constructor({ windowSize = 12, upgradeStreak = 8, downgradeStreak = 3, lockedProfileId = null } = {}) {
     this.windowSize = windowSize;
     this.upgradeStreakNeeded = upgradeStreak;
     this.downgradeStreakNeeded = downgradeStreak;
+    this.lockedProfileId = lockedProfileId;
     this.reset();
   }
 
@@ -90,6 +91,7 @@ export class AdaptiveLinkController {
   }
 
   status(profileId = this.samples.at(-1)?.profileId ?? PROFILE_ORDER[0]) {
+    if (this.lockedProfileId) profileId = this.lockedProfileId;
     const average = this.samples.length
       ? this.samples.reduce((sum, item) => sum + item.score, 0) / this.samples.length
       : 0;
@@ -97,7 +99,10 @@ export class AdaptiveLinkController {
     let recommendation = 'hold';
     let recommendedProfileId = profileId;
 
-    if (this.badStreak >= this.downgradeStreakNeeded && profileIndex(profileId) > 0) {
+    if (this.lockedProfileId) {
+      recommendation = 'hold';
+      recommendedProfileId = this.lockedProfileId;
+    } else if (this.badStreak >= this.downgradeStreakNeeded && profileIndex(profileId) > 0) {
       recommendation = 'fallback';
       recommendedProfileId = nextLower(profileId);
     } else if (this.goodStreak >= this.upgradeStreakNeeded && profileIndex(profileId) < PROFILE_ORDER.length - 1) {

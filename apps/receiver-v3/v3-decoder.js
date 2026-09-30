@@ -1,6 +1,6 @@
 import { getV3Color, joinV3Nibble } from '../../packages/constellation/src/v3.js';
 import { V3_G64_S4_C4_RS, getV3DataCellCoordinates } from '../../packages/optical-codec/src/profiles.js';
-import { recoverV3PacketFromSymbols } from '../../packages/optical-codec/src/v3-frame.js';
+import { recoverV3PacketFromSymbolsWithAlternates } from '../../packages/optical-codec/src/v3-frame.js';
 
 function mapPixel(x, y, rotation, size) {
   switch (rotation) {
@@ -253,18 +253,33 @@ function sampleSolidCell(imageData, cellX, cellY, rotation, phase, profile) {
 function sampleChromaticBackground(imageData, cellX, cellY, rotation, phase, profile) {
   const baseX = cellX * profile.cellSize + phase.dx;
   const baseY = cellY * profile.cellSize + phase.dy;
+  const samplesPerAxis = profile.cellSize >= 20 ? 7 : 5;
+  const inner = Math.max(1, profile.cellSize * 0.08);
+  const span = Math.max(1, profile.cellSize - inner * 2);
   const candidates = [];
-  for (let y = 1; y < profile.cellSize - 1; y += 1) {
-    for (let x = 1; x < profile.cellSize - 1; x += 1) {
-      const rgb = sampleRegion(imageData, baseX + x, baseY + y, baseX + x + 1, baseY + y + 1, rotation);
-      const chroma = Math.max(...rgb) - Math.min(...rgb);
-      if (chroma > 28) candidates.push({ rgb, chroma });
+
+  for (let gy = 0; gy < samplesPerAxis; gy += 1) {
+    for (let gx = 0; gx < samplesPerAxis; gx += 1) {
+      const rgb = samplePointBilinear(
+        imageData,
+        baseX + inner + ((gx + 0.5) / samplesPerAxis) * span,
+        baseY + inner + ((gy + 0.5) / samplesPerAxis) * span,
+        rotation,
+      );
+      const maximum = Math.max(...rgb);
+      const minimum = Math.min(...rgb);
+      const chroma = maximum - minimum;
+      const brightness = Math.max(1, (rgb[0] + rgb[1] + rgb[2]) / 3);
+      const saturation = chroma / brightness;
+      if (luma(rgb) > 18 && saturation > 0.12) candidates.push({ rgb, saturation });
     }
   }
-  candidates.sort((a, b) => b.chroma - a.chroma);
-  const selected = candidates.slice(0, 64);
+
+  candidates.sort((a, b) => b.saturation - a.saturation);
+  const keep = Math.max(6, Math.ceil(candidates.length * 0.55));
+  const selected = candidates.slice(0, keep);
   if (!selected.length) return sampleSolidCell(imageData, cellX, cellY, rotation, phase, profile);
-  return [0, 1, 2].map((channel) => trimmedMean(selected.map((item) => item.rgb[channel])));
+  return [0, 1, 2].map((channel) => trimmedMean(selected.map((item) => item.rgb[channel]), 0.10));
 }
 
 function buildColorCalibration(imageData, rotation, phase, profile) {
@@ -302,7 +317,14 @@ function classifyColor(rgb, calibration) {
   const marginConfidence = second.distance <= 1e-12 ? 0 : Math.max(0, Math.min(1, 1 - best.distance / second.distance));
   const fitConfidence = 1 / (1 + best.distance * 18);
   const confidence = Math.max(0, Math.min(1, marginConfidence * 0.72 + fitConfidence * 0.28));
-  return { ...best, confidence };
+  const secondFitConfidence = 1 / (1 + second.distance * 18);
+  return {
+    ...best,
+    confidence,
+    marginConfidence,
+    secondColorIndex: second.colorIndex,
+    secondConfidence: Math.max(0, Math.min(1, secondFitConfidence * (1 - marginConfidence * 0.5))),
+  };
 }
 
 function sampleBrightBackground(imageData, cellX, cellY, rotation, phase, profile) {
@@ -362,7 +384,41 @@ function classifyShape(feature, calibration) {
   const marginConfidence = second.distance <= 1e-12 ? 0 : Math.max(0, Math.min(1, 1 - best.distance / second.distance));
   const fitConfidence = 1 / (1 + best.distance * 4);
   const confidence = Math.max(0, Math.min(1, marginConfidence * 0.75 + fitConfidence * 0.25));
-  return { ...best, confidence };
+  const secondFitConfidence = 1 / (1 + second.distance * 4);
+  return {
+    ...best,
+    confidence,
+    marginConfidence,
+    secondShapeId: second.shapeId,
+    secondConfidence: Math.max(0, Math.min(1, secondFitConfidence * (1 - marginConfidence * 0.5))),
+  };
+}
+
+function classifyDataCell(imageData, x, y, rotation, phase, profile, colorCalibration, shapeCalibration) {
+  const localBackground = sampleChromaticBackground(imageData, x, y, rotation, phase, profile);
+  const color = classifyColor(localBackground, colorCalibration);
+  const shapeFeature = extractShapeFeature(imageData, x, y, rotation, phase, localBackground, profile);
+  const shape = classifyShape(shapeFeature, shapeCalibration);
+  const confidence = Math.min(shape.confidence, color.confidence);
+  const shapeAlternativeConfidence = Math.min(shape.secondConfidence, color.confidence);
+  const colorAlternativeConfidence = Math.min(color.secondConfidence, shape.confidence);
+  const alternateSymbol = shapeAlternativeConfidence >= colorAlternativeConfidence
+    ? joinV3Nibble(shape.secondShapeId, color.colorIndex)
+    : joinV3Nibble(shape.shapeId, color.secondColorIndex);
+  const alternateConfidence = Math.max(shapeAlternativeConfidence, colorAlternativeConfidence);
+
+  return {
+    symbol: joinV3Nibble(shape.shapeId, color.colorIndex),
+    shapeId: shape.shapeId,
+    colorId: color.colorIndex,
+    shapeConfidence: shape.confidence,
+    colorConfidence: color.confidence,
+    confidence,
+    alternateSymbol,
+    alternateConfidence,
+    phaseDx: phase.dx,
+    phaseDy: phase.dy,
+  };
 }
 
 function minimumCalibrationSeparation(calibration, key) {
@@ -416,24 +472,65 @@ export function observeV3ImageData(imageData, rotation = 0, profile = V3_G64_S4_
   const confidences = new Float32Array(profile.encodedSymbolCapacity);
   const shapeConfidences = new Float32Array(profile.encodedSymbolCapacity);
   const colorConfidences = new Float32Array(profile.encodedSymbolCapacity);
+  const alternateSymbols = new Uint8Array(profile.encodedSymbolCapacity);
+  const alternateConfidences = new Float32Array(profile.encodedSymbolCapacity);
+  const cellResults = coordinates.map(({ x, y }) => (
+    classifyDataCell(imageData, x, y, rotation, phase, profile, colorCalibration, shapeCalibration)
+  ));
+
+  // Only refine the weakest cells. This bounds CPU cost on phones while still
+  // compensating for residual local warp / LCD-camera phase error.
+  const refineLimit = Math.min(96, Math.max(24, Math.ceil(coordinates.length * 0.12)));
+  const refinementCandidates = cellResults
+    .map((result, index) => ({ index, confidence: result.confidence }))
+    .filter((item) => item.confidence < 0.46)
+    .sort((a, b) => a.confidence - b.confidence)
+    .slice(0, refineLimit);
+  const localOffsets = [
+    [-0.75, 0],
+    [0.75, 0],
+    [0, -0.75],
+    [0, 0.75],
+  ];
+  let refinedCells = 0;
+
+  for (const { index } of refinementCandidates) {
+    const { x, y } = coordinates[index];
+    let best = cellResults[index];
+    for (const [dx, dy] of localOffsets) {
+      const candidate = classifyDataCell(
+        imageData,
+        x,
+        y,
+        rotation,
+        { dx: phase.dx + dx, dy: phase.dy + dy },
+        profile,
+        colorCalibration,
+        shapeCalibration,
+      );
+      const bestScore = best.confidence + best.alternateConfidence * 0.08;
+      const candidateScore = candidate.confidence + candidate.alternateConfidence * 0.08 - 0.005;
+      if (candidateScore > bestScore) best = candidate;
+    }
+    if (best.phaseDx !== phase.dx || best.phaseDy !== phase.dy) refinedCells += 1;
+    cellResults[index] = best;
+  }
+
   let colorConfidenceSum = 0;
   let shapeConfidenceSum = 0;
   let lowConfidenceCells = 0;
-
-  coordinates.forEach(({ x, y }, index) => {
-    const localBackground = sampleChromaticBackground(imageData, x, y, rotation, phase, profile);
-    const color = classifyColor(localBackground, colorCalibration);
-    const shapeFeature = extractShapeFeature(imageData, x, y, rotation, phase, localBackground, profile);
-    const shape = classifyShape(shapeFeature, shapeCalibration);
-    symbols[index] = joinV3Nibble(shape.shapeId, color.colorIndex);
-    shapeIds[index] = shape.shapeId;
-    colorIds[index] = color.colorIndex;
-    shapeConfidences[index] = shape.confidence;
-    colorConfidences[index] = color.confidence;
-    confidences[index] = Math.min(shape.confidence, color.confidence);
-    colorConfidenceSum += color.confidence;
-    shapeConfidenceSum += shape.confidence;
-    if (confidences[index] < 0.34) lowConfidenceCells += 1;
+  cellResults.forEach((result, index) => {
+    symbols[index] = result.symbol;
+    shapeIds[index] = result.shapeId;
+    colorIds[index] = result.colorId;
+    shapeConfidences[index] = result.shapeConfidence;
+    colorConfidences[index] = result.colorConfidence;
+    confidences[index] = result.confidence;
+    alternateSymbols[index] = result.alternateSymbol;
+    alternateConfidences[index] = result.alternateConfidence;
+    colorConfidenceSum += result.colorConfidence;
+    shapeConfidenceSum += result.shapeConfidence;
+    if (result.confidence < 0.34) lowConfidenceCells += 1;
   });
 
   const averageColorConfidence = colorConfidenceSum / coordinates.length;
@@ -451,6 +548,9 @@ export function observeV3ImageData(imageData, rotation = 0, profile = V3_G64_S4_
     confidences,
     shapeConfidences,
     colorConfidences,
+    alternateSymbols,
+    alternateConfidences,
+    refinedCellRate: refinedCells / coordinates.length,
     timingSeparation: phase.separation,
     signatureSeparation,
     phaseX: phase.dx,
@@ -474,7 +574,13 @@ export function decodeV3Observation(observation, profile = V3_G64_S4_C4_RS) {
   if (!observation || observation.profileId !== profile.id) throw new Error(`Expected observation for ${profile.id}`);
   let recovered;
   try {
-    recovered = recoverV3PacketFromSymbols(observation.symbols, profile, observation.confidences);
+    recovered = recoverV3PacketFromSymbolsWithAlternates(
+      observation.symbols,
+      profile,
+      observation.confidences,
+      observation.alternateSymbols,
+      observation.alternateConfidences,
+    );
   } catch (error) {
     error.v3Diagnostics = {
       timingSeparation: observation.timingSeparation,
@@ -488,6 +594,9 @@ export function decodeV3Observation(observation, profile = V3_G64_S4_C4_RS) {
       lowConfidenceCellRate: observation.lowConfidenceCellRate,
       colorCalibrationSeparation: observation.colorCalibrationSeparation,
       shapeCalibrationSeparation: observation.shapeCalibrationSeparation,
+      refinedCellRate: observation.refinedCellRate,
+      selectiveRetryAttempts: error.selectiveRetryAttempts ?? 0,
+      rescuedBlocks: error.rescuedBlocks ?? [],
     };
     throw error;
   }
@@ -510,6 +619,9 @@ export function decodeV3Observation(observation, profile = V3_G64_S4_C4_RS) {
     lowConfidenceCellRate: observation.lowConfidenceCellRate,
     colorCalibrationSeparation: observation.colorCalibrationSeparation,
     shapeCalibrationSeparation: observation.shapeCalibrationSeparation,
+    refinedCellRate: observation.refinedCellRate,
+    selectiveRetryAttempts: recovered.selectiveRetryAttempts ?? 0,
+    rescuedBlocks: recovered.rescuedBlocks ?? [],
   };
 }
 

@@ -8,10 +8,12 @@ import {
   encodeV3Frame,
   decodeV3Frame,
   getV3DataCellCoordinates,
+  deinterleaveV3,
   recoverV3PacketFromSymbols,
   recoverV3PacketFromSymbolsWithAlternates,
 } from '../src/index.js';
 import { splitV3Nibble } from '../../constellation/src/v3.js';
+import { rs16Decode } from '../../fec/src/rs16.js';
 
 function makeBytes(length) {
   const bytes = new Uint8Array(length);
@@ -81,22 +83,36 @@ test('V3 selective retry rescues a failed RS block using runner-up optical symbo
   const coordinates = getV3DataCellCoordinates(profile);
   const original = Uint8Array.from(coordinates, ({ x, y }) => frame.cells[y][x].value);
   const damaged = original.slice();
-  const alternates = damaged.slice();
+  const alternates = original.slice();
   const confidences = new Float32Array(damaged.length).fill(0.92);
   const alternateConfidences = new Float32Array(damaged.length);
-  const block = 7;
+  const block = 0;
+  const positions = [1, 5, 11];
+  const originalWord = deinterleaveV3(original, profile)[block];
 
-  // Three wrong symbols in one RS(15,11) codeword exceed the normal
-  // two-error budget. Runner-up symbols point back to the correct values.
-  for (const [n, position] of [1, 5, 11].entries()) {
+  // Find a deterministic three-error pattern that the base RS decoder
+  // actually rejects. Once one wrong symbol is replaced by its optical
+  // runner-up, only two errors remain and unique RS correction is possible.
+  let deltas = null;
+  for (let salt = 1; salt <= 15 && !deltas; salt += 1) {
+    const candidateDeltas = positions.map((_, index) => ((salt + index * 5 - 1) % 15) + 1);
+    const word = originalWord.slice();
+    positions.forEach((position, index) => { word[position] ^= candidateDeltas[index]; });
+    try {
+      rs16Decode(word);
+    } catch (error) {
+      if (error.code === 'RS16_UNCORRECTABLE') deltas = candidateDeltas;
+    }
+  }
+  assert.ok(deltas, 'expected to find an uncorrectable three-error RS pattern');
+
+  positions.forEach((position, n) => {
     const index = position * profile.rsCodewordCount + block;
-    damaged[index] = original[index] ^ (n + 1);
+    damaged[index] = original[index] ^ deltas[n];
     alternates[index] = original[index];
-    // Keep primary confidence above the erasure threshold so the baseline
-    // decoder sees three unknown errors and must fail.
     confidences[index] = 0.55 + n * 0.02;
     alternateConfidences[index] = 0.80;
-  }
+  });
 
   assert.throws(
     () => recoverV3PacketFromSymbols(damaged, profile, confidences),

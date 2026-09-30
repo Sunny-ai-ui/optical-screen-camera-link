@@ -135,3 +135,26 @@ test('temporal fusion preserves calibration diagnostics', () => {
   assert.ok(Math.abs(fused.shapeCalibrationSeparation - 1.00) < 1e-9);
   assert.ok(Math.abs(fused.lowConfidenceCellRate - 0.03) < 1e-9);
 });
+
+
+test('temporal fusion preserves a classifier runner-up even when all primary symbols agree', () => {
+  const a = observation([9], 0.9);
+  const b = observation([9], 0.85);
+  a.alternateSymbols = Uint8Array.of(10);
+  b.alternateSymbols = Uint8Array.of(10);
+  a.alternateConfidences = Float32Array.of(0.62);
+  b.alternateConfidences = Float32Array.of(0.58);
+  const fused = fuseV3Observations([a, b]);
+  assert.equal(fused.symbols[0], 9);
+  assert.equal(fused.alternateSymbols[0], 10);
+  assert.ok(fused.alternateConfidences[0] >= 0.58);
+});
+
+test('weighted fusion gives a real runner-up when best state is zero', () => {
+  const a = observation([0], 0.9);
+  const b = observation([0], 0.8);
+  const c = observation([1], 0.4);
+  const fused = fuseV3Observations([a, b, c]);
+  assert.equal(fused.symbols[0], 0);
+  assert.notEqual(fused.alternateSymbols[0], fused.symbols[0]);
+});

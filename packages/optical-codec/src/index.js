@@ -5,6 +5,7 @@ export * from './v2-frame.js';
 export * from './v21-frame.js';
 export * from './v22-frame.js';
 export * from './v3-frame.js';
+export * from './m9-frame.js';
 export * from './fiducials.js';
 export * from './shapes.js';
 export * from './svg-renderer.js';

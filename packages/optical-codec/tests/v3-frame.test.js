@@ -92,8 +92,10 @@ test('V3 selective retry rescues a failed RS block using runner-up optical symbo
     const index = position * profile.rsCodewordCount + block;
     damaged[index] = original[index] ^ (n + 1);
     alternates[index] = original[index];
-    confidences[index] = 0.24 + n * 0.02;
-    alternateConfidences[index] = 0.68;
+    // Keep primary confidence above the erasure threshold so the baseline
+    // decoder sees three unknown errors and must fail.
+    confidences[index] = 0.55 + n * 0.02;
+    alternateConfidences[index] = 0.80;
   }
 
   assert.throws(

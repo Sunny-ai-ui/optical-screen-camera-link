@@ -20,36 +20,24 @@ export function deriveDecoderTuning(calibration = null) {
  * erasure selection without changing the wire format.
  */
 export function calibrateObservationConfidences(observation, calibration = null) {
-  if (!observation?.confidences || !calibration || calibration.state !== 'ready') return observation;
+  if (!observation?.confidences) return observation;
+  if (!calibration || calibration.state !== 'ready') {
+    return { ...observation, calibrationConfidenceScale: 1, channelConfidenceRatio: 1 };
+  }
+
   const expectedShape = Math.max(0.2, calibration.shapeConfidence || 0.2);
   const expectedColour = Math.max(0.2, calibration.colourConfidence || 0.2);
-  const shapeRatio = clamp((observation.averageShapeConfidence || 0) / expectedShape, 0.55, 1.08);
-  const colourRatio = clamp((observation.averageColorConfidence || 0) / expectedColour, 0.55, 1.08);
-  const globalScale = Math.min(shapeRatio, colourRatio);
-  if (globalScale >= 0.995) return observation;
+  const shapeRatio = clamp((observation.averageShapeConfidence || 0) / expectedShape, 0.55, 1.20);
+  const colourRatio = clamp((observation.averageColorConfidence || 0) / expectedColour, 0.55, 1.20);
+  const channelConfidenceRatio = Math.min(shapeRatio, colourRatio);
 
-  const shapeConfidences = new Float32Array(observation.shapeConfidences.length);
-  const colorConfidences = new Float32Array(observation.colorConfidences.length);
-  const confidences = new Float32Array(observation.confidences.length);
-  let shapeSum = 0;
-  let colourSum = 0;
-  let combinedSum = 0;
-  for (let i = 0; i < confidences.length; i += 1) {
-    shapeConfidences[i] = clamp(observation.shapeConfidences[i] * shapeRatio, 0, 1);
-    colorConfidences[i] = clamp(observation.colorConfidences[i] * colourRatio, 0, 1);
-    confidences[i] = Math.min(shapeConfidences[i], colorConfidences[i]);
-    shapeSum += shapeConfidences[i];
-    colourSum += colorConfidences[i];
-    combinedSum += confidences[i];
-  }
+  // v0.4.3 deliberately stops multiplying every cell by one global factor.
+  // The optical classifier already produces per-cell confidence, and a global
+  // penalty was turning locally good cells into erasures when one region of the
+  // screen was weak. Keep the channel ratio as a diagnostic only.
   return {
     ...observation,
-    shapeConfidences,
-    colorConfidences,
-    confidences,
-    averageShapeConfidence: shapeSum / Math.max(1, confidences.length),
-    averageColorConfidence: colourSum / Math.max(1, confidences.length),
-    averageConfidence: combinedSum / Math.max(1, confidences.length),
-    calibrationConfidenceScale: globalScale,
+    calibrationConfidenceScale: 1,
+    channelConfidenceRatio,
   };
 }
